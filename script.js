@@ -23,6 +23,17 @@ const map = [
   "1000000001",
   "1111111111",
 ];
+/*
+new map prototype
+
+const map = [
+  "1111111111",
+  "1000000001",
+  "1001000001",
+  "1000000001",
+  "1111111111",
+];
+*/
 
 function isWall(x, y) {
   return map[Math.floor(y)]?.[Math.floor(x)] === "1";
