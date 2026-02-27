@@ -44,13 +44,11 @@ canvas {
 }
 
 
-/*
- menu styling
-*/
+/* menu styling */
 .menu {
     position: absolute;
     top: 80px;
-    background-image: linear-gradient(to right, blue, linen);
+    background-image: linear-gradient(to right, black, lightslategray);
     border: 1px solid #ccc;
     padding: 10px;
 }
@@ -112,9 +110,11 @@ body {
 }
 
 .title {
-    background-color: lightblue;
+    background-color: lightslategray;
     padding: 5px;
     margin: 0;
+    font-family: Verdana;
+    font-weight: bold;
 }
 
 .title h1 {

@@ -9,14 +9,14 @@ menuButton.addEventListener("click", function (e) {
 
 function rotate(){
     let line = document.getElementsByClassName("bars");
-    line[0].style.transform = "rotate(0deg) translate(15px,40px)"
-    line[1].style.transform = "rotate(90deg) translate(20px,0px)"
-    line[2].style.transform = "rotate(90deg) translate(6px,0px)"
-    line[3].style.transform = "rotate(0deg) translate(-15px,-10px)"
-    line[4].style.transform = "rotate(0deg) translate(-20px,-30px)"
-    line[5].style.transform = "rotate(90deg) translate(-10px,50px)"
-    line[6].style.transform = "rotate(90deg) translate(-10px,20px)"
-    line[7].style.transform = "rotate(0deg) translate(-70px,10px)"
+    line[0].style.transform = "rotate(-45deg) translate(0px,0px)"
+    line[1].style.transform = "rotate(45deg) translate(-20px,20px)"
+    line[2].style.transform = "rotate(-45deg) translate(20px,20px)"
+    line[3].style.transform = "rotate(45deg) translate(0px,0px)"
+    line[4].style.transform = "rotate(-45deg) translate(0px,0px)"
+    line[5].style.transform = "rotate(45deg) translate(-20px,20px)"
+    line[6].style.transform = "rotate(-45deg) translate(20px,20px)"
+    line[7].style.transform = "rotate(45deg) translate(0px,0px)"
 }
 function unrotate(){
     let line = document.getElementsByClassName("bars");
