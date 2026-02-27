@@ -9,37 +9,59 @@ const wss = new WebSocket.Server({ server });
 
 const PORT = process.env.PORT || 3000;
 
-/* --- Serve static files --- */
 app.use(express.static(__dirname));
 
-/* --- Multiplayer state --- */
-const players = {};
+const players = {}; // id => { x, y, angle, z, username }
 
-/* --- WebSocket handling --- */
-wss.on("connection", ws => {
-  const id = Math.random().toString(36).slice(2);
-  players[id] = { x: 2, y: 2, angle: 0 };
-
-  ws.send(JSON.stringify({ id }));
-
-  ws.on("message", msg => {
-    players[id] = JSON.parse(msg);
-    broadcast();
-  });
-
-  ws.on("close", () => {
-    delete players[id];
-    broadcast();
-  });
-});
-
-function broadcast() {
-  const data = JSON.stringify(players);
-  wss.clients.forEach(c => {
+function broadcastPlayers() {
+  const data = JSON.stringify({ type: "players", players });
+  wss.clients.forEach((c) => {
     if (c.readyState === WebSocket.OPEN) c.send(data);
   });
 }
 
-server.listen(PORT, () => {
-  console.log("Server running on port", PORT);
+function broadcastChat(name, message) {
+  const data = JSON.stringify({ type: "chat", name, message });
+  wss.clients.forEach((c) => {
+    if (c.readyState === WebSocket.OPEN) c.send(data);
+  });
+}
+
+wss.on("connection", (ws) => {
+  const id = Math.random().toString(36).slice(2);
+  ws.id = id;
+  ws.username = "Anonymous";
+  players[id] = { x: 3, y: 17, angle: 0, z: 0, username: ws.username };
+
+  ws.send(JSON.stringify({ type: "init", id }));
+
+  ws.on("message", (msg) => {
+    let data;
+    try {
+      data = JSON.parse(msg);
+    } catch {
+      return;
+    }
+
+    if (data.type === "chat") {
+      broadcastChat(ws.username, data.message);
+      return;
+    }
+    if (data.type === "setName") {
+      ws.username = String(data.name || "Anonymous").trim() || "Anonymous";
+      if (players[id]) players[id].username = ws.username;
+      return;
+    }
+    if (players[id]) {
+      players[id] = { ...players[id], ...data };
+      broadcastPlayers();
+    }
+  });
+
+  ws.on("close", () => {
+    delete players[id];
+    broadcastPlayers();
+  });
 });
+
+server.listen(PORT, () => console.log(`Server running on port ${PORT}`));

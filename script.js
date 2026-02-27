@@ -1,26 +1,23 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 
-/* =====================
-   CONSTANTS
-===================== */
+// ====================
+// PLAYER CONSTANTS
+// ====================
 const PLAYER_RADIUS = 0.2;
 const MOVE_SPEED = 0.05;
-
 const FOV = Math.PI / 3;
 const RAYS = canvas.width;
-
 const JUMP_VELOCITY = 0.22;
 const GRAVITY = 0.012;
-const MAX_JUMP = 0.35; // clamp jump height
-const JUMP_SCALE = 200; // pixels per height unit
-
+const MAX_JUMP = 0.35;
+const JUMP_SCALE = 200;
 const MINIMAP_SCALE = 10;
 const MINIMAP_PADDING = 10;
 
-/* =====================
-   MAP
-===================== */
+// ====================
+// MAP
+// ====================
 const maps = [
   [
     "------------------------------####-----------------------------------",
@@ -66,35 +63,6 @@ const maps = [
     "--------------#---------#--------------------------------------------",
     "--------------###########--------------------------------------------",
   ],
-  [
-    "1111111111",
-    "1--------1",
-    "1--------1",
-    "1--------1",
-    "1--------1",
-    "1--------1",
-    "1--------1",
-    "1--------1",
-    "1--------1",
-    "1--------1",
-    "1--------1",
-    "1--------1",
-    "1--------1",
-    "1--------1",
-    "1--------1",
-    "1--------1",
-    "1--------1",
-    "1--------1",
-    "1--------1",
-    "1--------1",
-    "1--------1",
-    "1--------1",
-    "1--------1",
-    "1--------1",
-    "1--------1",
-    "1--------1",
-    "1111111111",
-  ],
 ];
 
 let mapIndex = 0;
@@ -105,9 +73,9 @@ function isWall(x, y) {
   return map[Math.floor(y)]?.[Math.floor(x)] === mapStr;
 }
 
-/* =====================
-   PLAYER STATE
-===================== */
+// ====================
+// PLAYER STATE
+// ====================
 let player = { x: 3, y: 17, angle: 0 };
 let z = 0;
 let zVel = 0;
@@ -116,143 +84,104 @@ let onGround = true;
 let others = {};
 let myId = null;
 
-/* =====================
-   WEBSOCKET
-===================== */
-const wsProtocol = location.protocol === "https:" ? "wss://" : "ws://";
-const ws = new WebSocket(wsProtocol + location.host);
-
-ws.onmessage = (e) => {
-  const data = JSON.parse(e.data);
-  if (data.id) myId = data.id;
-  else others = data;
-};
-
-/* =====================
-   INPUT
-===================== */
+// ====================
+// INPUT
+// ====================
 const keys = {};
 onkeydown = (e) => (keys[e.key] = true);
 onkeyup = (e) => (keys[e.key] = false);
 
-/* =====================
-   RAYCASTING
-===================== */
-function castRay(angle) {
-  const sin = Math.sin(angle);
-  const cos = Math.cos(angle);
+// ====================
+// CHAT STATE
+// ====================
+let isChatting = false;
 
-  let d = 0;
-  let prevX = player.x;
-  let prevY = player.y;
+// ====================
+// CHAT ELEMENTS
+// ====================
+const chat = document.getElementById("chat");
+const chatInput = document.getElementById("chatInput");
+const sendBtn = document.getElementById("sendBtn");
 
-  while (d < 20) {
-    const x = player.x + cos * d;
-    const y = player.y + sin * d;
+// WebSocket
+const wsProtocol = location.protocol === "https:" ? "wss://" : "ws://";
+const ws = new WebSocket(wsProtocol + location.host);
 
-    if (isWall(x, y)) {
-      const hitVertical = Math.floor(x) !== Math.floor(prevX);
-      return { dist: d, vertical: hitVertical };
-    }
+// Prompt username
+let username = prompt("Enter your username:") || "Anonymous";
+username = username.trim() || "Anonymous";
 
-    prevX = x;
-    prevY = y;
-    d += 0.02;
-  }
+ws.addEventListener("open", () => {
+  ws.send(JSON.stringify({ type: "setName", name: username }));
+});
 
-  return { dist: 20, vertical: false };
+// ====================
+// CHAT LOGIC
+// ====================
+function sendMessage() {
+  const msg = chatInput.value.trim();
+  if (!msg) return;
+  ws.send(JSON.stringify({ type: "chat", message: msg }));
+  chatInput.value = "";
+  chatInput.blur();
 }
 
-/* =====================
-   MINIMAP
-===================== */
-function drawMinimap() {
-  const VIEW_RADIUS = 12;
-  const startX = MINIMAP_PADDING;
-  const startY = MINIMAP_PADDING;
-  const size = VIEW_RADIUS * 2;
+sendBtn.addEventListener("click", sendMessage);
 
-  ctx.fillStyle = "rgba(0,0,0,0.6)";
-  ctx.fillRect(startX - 4, startY - 4, size * MINIMAP_SCALE + 8, size * MINIMAP_SCALE + 8);
+chatInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") sendMessage();
+});
 
-  const centerX = Math.floor(player.x);
-  const centerY = Math.floor(player.y);
+chatInput.addEventListener("focus", () => {
+  isChatting = true;
+});
 
-  for (let y = -VIEW_RADIUS; y < VIEW_RADIUS; y++) {
-    for (let x = -VIEW_RADIUS; x < VIEW_RADIUS; x++) {
-      const mapX = centerX + x;
-      const mapY = centerY + y;
+chatInput.addEventListener("blur", () => {
+  isChatting = false;
+});
 
-      if (map[mapY]?.[mapX] === mapStr) {
-        ctx.fillStyle = "#888";
-        ctx.fillRect(
-          startX + (x + VIEW_RADIUS) * MINIMAP_SCALE,
-          startY + (y + VIEW_RADIUS) * MINIMAP_SCALE,
-          MINIMAP_SCALE,
-          MINIMAP_SCALE
-        );
-      }
-    }
+document.addEventListener("keydown", (e) => {
+  if (e.key === "/") {
+    chatInput.focus();
   }
+});
 
-  // Draw other players
-  for (const id in others) {
-    if (id === myId) continue;
-    const p = others[id];
+// ====================
+// NETWORK EVENTS
+// ====================
+ws.addEventListener("message", (e) => {
+  const data = JSON.parse(e.data);
 
-    const dx = p.x - player.x;
-    const dy = p.y - player.y;
+  if (data.type === "init") myId = data.id;
+  if (data.type === "players") others = { ...data.players };
 
-    if (Math.abs(dx) > VIEW_RADIUS || Math.abs(dy) > VIEW_RADIUS) continue;
-
-    ctx.fillStyle = "red";
-    ctx.beginPath();
-    ctx.arc(
-      startX + (dx + VIEW_RADIUS) * MINIMAP_SCALE,
-      startY + (dy + VIEW_RADIUS) * MINIMAP_SCALE,
-      3,
-      0,
-      Math.PI * 2
-    );
-    ctx.fill();
+  if (data.type === "chat") {
+    const div = document.createElement("div");
+    div.textContent = `${data.name}: ${data.message}`;
+    chat.appendChild(div);
+    chat.scrollTop = chat.scrollHeight;
   }
+});
 
-  // Player
-  ctx.fillStyle = "lime";
-  ctx.beginPath();
-  ctx.arc(
-    startX + VIEW_RADIUS * MINIMAP_SCALE + (VIEW_RADIUS / 2),
-    startY + VIEW_RADIUS * MINIMAP_SCALE + (VIEW_RADIUS / 2),
-    4,
-    0,
-    Math.PI * 2
-  );
-  ctx.fill();
-
-  // Direction
-  ctx.strokeStyle = "lime";
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(
-    startX + VIEW_RADIUS * MINIMAP_SCALE + (VIEW_RADIUS / 2),
-    startY + VIEW_RADIUS * MINIMAP_SCALE + (VIEW_RADIUS / 2)
-  );
-  ctx.lineTo(
-    startX + (VIEW_RADIUS + Math.cos(player.angle) * 0.8) * MINIMAP_SCALE + (VIEW_RADIUS / 2),
-    startY + (VIEW_RADIUS + Math.sin(player.angle) * 0.8) * MINIMAP_SCALE + (VIEW_RADIUS / 2)
-  );
-  ctx.stroke();
-}
-
-/* =====================
-   UPDATE
-===================== */
+// ====================
+// UPDATE LOOP
+// ====================
 function update() {
+  // 🚫 Disable movement while chatting
+  if (isChatting) {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(
+        JSON.stringify({ x: player.x, y: player.y, angle: player.angle, z })
+      );
+    }
+    return;
+  }
+
   if (keys["ArrowLeft"]) player.angle -= 0.04;
   if (keys["ArrowRight"]) player.angle += 0.04;
 
-  let moveX = 0;
-  let moveY = 0;
+  let moveX = 0,
+    moveY = 0;
 
   if (keys["w"]) {
     moveX += Math.cos(player.angle) * MOVE_SPEED;
@@ -271,20 +200,24 @@ function update() {
     moveY += Math.sin(player.angle + Math.PI / 2) * MOVE_SPEED;
   }
 
-  const nx = player.x + moveX;
-  if (!isWall(nx + PLAYER_RADIUS, player.y) && !isWall(nx - PLAYER_RADIUS, player.y)) {
-    player.x = nx;
-  }
-
-  const ny = player.y + moveY;
-  if (!isWall(player.x, ny + PLAYER_RADIUS) && !isWall(player.x, ny - PLAYER_RADIUS)) {
-    player.y = ny;
-  }
-
   if (keys[" "] && onGround) {
     zVel = JUMP_VELOCITY;
     onGround = false;
   }
+
+  const nx = player.x + moveX;
+  if (
+    !isWall(nx + PLAYER_RADIUS, player.y) &&
+    !isWall(nx - PLAYER_RADIUS, player.y)
+  )
+    player.x = nx;
+
+  const ny = player.y + moveY;
+  if (
+    !isWall(player.x, ny + PLAYER_RADIUS) &&
+    !isWall(player.x, ny - PLAYER_RADIUS)
+  )
+    player.y = ny;
 
   zVel -= GRAVITY;
   z += zVel;
@@ -298,19 +231,95 @@ function update() {
 
   if (ws.readyState === WebSocket.OPEN) {
     ws.send(
-      JSON.stringify({
-        x: player.x,
-        y: player.y,
-        angle: player.angle,
-        z,
-      })
+      JSON.stringify({ x: player.x, y: player.y, angle: player.angle, z })
     );
   }
 }
 
-/* =====================
-   RENDER
-===================== */
+// ====================
+// RENDERING
+// ====================
+function castRay(angle) {
+  const sin = Math.sin(angle),
+    cos = Math.cos(angle);
+  let d = 0,
+    prevX = player.x,
+    prevY = player.y;
+
+  while (d < 20) {
+    const x = player.x + cos * d;
+    const y = player.y + sin * d;
+    if (isWall(x, y))
+      return { dist: d, vertical: Math.floor(x) !== Math.floor(prevX) };
+    prevX = x;
+    prevY = y;
+    d += 0.02;
+  }
+  return { dist: 20, vertical: false };
+}
+
+function drawMinimap() {
+  const VIEW_RADIUS = 12;
+  const startX = MINIMAP_PADDING,
+    startY = MINIMAP_PADDING;
+
+  ctx.fillStyle = "rgba(0,0,0,0.6)";
+  ctx.fillRect(
+    startX - 4,
+    startY - 4,
+    VIEW_RADIUS * 2 * MINIMAP_SCALE + 8,
+    VIEW_RADIUS * 2 * MINIMAP_SCALE + 8
+  );
+
+  const centerX = Math.floor(player.x),
+    centerY = Math.floor(player.y);
+
+  for (let y = -VIEW_RADIUS; y < VIEW_RADIUS; y++) {
+    for (let x = -VIEW_RADIUS; x < VIEW_RADIUS; x++) {
+      const mapX = centerX + x,
+        mapY = centerY + y;
+      if (map[mapY]?.[mapX] === mapStr) {
+        ctx.fillStyle = "#888";
+        ctx.fillRect(
+          startX + (x + VIEW_RADIUS) * MINIMAP_SCALE,
+          startY + (y + VIEW_RADIUS) * MINIMAP_SCALE,
+          MINIMAP_SCALE,
+          MINIMAP_SCALE
+        );
+      }
+    }
+  }
+
+  for (const id in others) {
+    if (id === myId) continue;
+    const p = others[id];
+    const dx = p.x - player.x,
+      dy = p.y - player.y;
+    if (Math.abs(dx) > VIEW_RADIUS || Math.abs(dy) > VIEW_RADIUS) continue;
+    ctx.fillStyle = "red";
+    ctx.beginPath();
+    ctx.arc(
+      startX + (dx + VIEW_RADIUS) * MINIMAP_SCALE,
+      startY + (dy + VIEW_RADIUS) * MINIMAP_SCALE,
+      3,
+      0,
+      Math.PI * 2
+    );
+    ctx.fill();
+  }
+
+  ctx.fillStyle = "lime";
+  ctx.beginPath();
+  ctx.arc(
+    startX + VIEW_RADIUS * MINIMAP_SCALE + VIEW_RADIUS / 2,
+    startY + VIEW_RADIUS * MINIMAP_SCALE + VIEW_RADIUS / 2,
+    4,
+    0,
+    Math.PI * 2
+  );
+  ctx.fill();
+}
+
 function render() {
   const jumpOffset = z * JUMP_SCALE;
   const horizon = canvas.height / 2 + jumpOffset;
@@ -387,10 +396,6 @@ function render() {
   drawMinimap();
   requestAnimationFrame(loop);
 }
-
-/* =====================
-   LOOP
-===================== */
 function loop() {
   update();
   render();
