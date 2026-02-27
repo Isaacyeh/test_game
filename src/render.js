@@ -1,9 +1,8 @@
 // render.js
 // raycasting and drawing routines
 
-import { canvas, ctx } from "./dom.js";
 import { player, others, myId } from "./player.js";
-import { FOV, JUMP_SCALE, MINIMAP_SCALE, MINIMAP_PADDING } from "./constants.js";
+import { FOV, JUMP_SCALE, MINIMAP_SCALE, MINIMAP_PADDING, canvas, ctx } from "./constants.js";
 import { isWall, map, mapStr } from "./map.js";
 import { updateState } from "./update.js";
 
