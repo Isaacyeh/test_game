@@ -3,7 +3,7 @@
 
 import { player, others, myId } from "./player.js";
 import { FOV, JUMP_SCALE, MINIMAP_SCALE, MINIMAP_PADDING, canvas, ctx } from "./constants.js";
-import { isWall, map, mapStr } from "./map.js";
+import { isWall, map, mapStr, WALL_TYPES } from "./map.js";
 import { updateState } from "./update.js";
 
 // depth buffer used for occlusion of other players
@@ -110,32 +110,54 @@ export function renderFrame() {
 
   for (let i = 0; i < RAYS; i++) {
     const rayAngle = player.angle - FOV / 2 + (i / RAYS) * FOV;
+
     const hit = castRay(rayAngle);
     const dist = hit.dist * Math.cos(rayAngle - player.angle);
-    const height = canvas.height / dist;
 
-    depth[i] = dist;
-
-    // Determine wall face color
-    const faceColor = "#ffffff";
-    const edgeColor = "#000000";
-
-    // Draw main face
-    ctx.fillStyle = faceColor;
-    ctx.fillRect(i, horizon - height / 2, 1, height);
-
-    // --- Edge detection: check if ray crossed tile boundary ---
+    // calculate hit position once
     const hitX = player.x + Math.cos(rayAngle) * hit.dist;
     const hitY = player.y + Math.sin(rayAngle) * hit.dist;
 
     const tileX = Math.floor(hitX);
     const tileY = Math.floor(hitY);
 
+    // get wall data
+    const tile = map[tileY]?.[tileX];
+    const wall = WALL_TYPES[tile];
+
+    if (!wall) {
+      prevTileX = tileX;
+      prevTileY = tileY;
+      continue;
+    }
+
+    const wallHeight = wall.height ?? 1;
+    const height = (canvas.height / dist) * wallHeight;
+
+    depth[i] = dist;
+
+    // determine wall face color
+    const faceColor = "#ffffff"; // unused but kept for future shading
+    const edgeColor = "#000000";
+
+    // draw main face
+    ctx.fillStyle = wall.color ?? "#ffffff";
+
+    if (wall.shape === "full") {
+      ctx.fillRect(i, horizon - height / 2, 1, height);
+    } else if (wall.shape === "half") {
+      ctx.fillRect(i, horizon, 1, height);
+    } else if (wall.shape === "pillar") {
+      ctx.fillRect(i, horizon - height / 2, 1, height * 0.7);
+    }
+
+    // --- edge detection: compare with previous ray's tile ---
     if (tileX !== prevTileX || tileY !== prevTileY) {
       ctx.fillStyle = edgeColor;
       ctx.fillRect(i, horizon - height / 2, 1, height);
     }
 
+    // update previous tile for next iteration
     prevTileX = tileX;
     prevTileY = tileY;
   }
@@ -154,7 +176,8 @@ export function renderFrame() {
     if (Math.abs(norm) > FOV / 2) continue;
 
     const sx = (0.5 + norm / FOV) * canvas.width;
-    if (depth[Math.floor(sx)] < dist) continue;
+    const ix = Math.floor(sx);
+    if (ix < 0 || ix >= depth.length || depth[ix] < dist) continue;
 
     const size = canvas.height / dist;
     const sy = horizon - size / 2 - (p.z || 0) * JUMP_SCALE;

@@ -46,14 +46,44 @@ export const maps = [
     "--------------#---------#--------------------------------------------",
     "--------------###########--------------------------------------------",
   ],
+  [
+    "1111111111",
+    "1---2----1",
+    "1--------1",
+    "1---3----1",
+    "1111111111",
+  ],
 ];
 
-export let mapIndex = 0;
+export let mapIndex = 1;
 export let map = maps[mapIndex];
-export const mapStr = "#";
+
+export const WALL_TYPES = {
+  "1": {
+    solid: true,
+    height: 1,
+    color: "#ffffff",
+    shape: "full"
+  },
+
+  "2": {
+    solid: true,
+    height: 0.5,
+    color: "#00ccff",
+    shape: "half"
+  },
+
+  "3": {
+    solid: true,
+    height: 1,
+    color: "#ff0000",
+    shape: "pillar"
+  }
+};
 
 export function isWall(x, y) {
-  return map[Math.floor(y)]?.[Math.floor(x)] === mapStr;
+  const tile = map[Math.floor(y)]?.[Math.floor(x)];
+  return tile && WALL_TYPES[tile]?.solid;
 }
 
 export function setMap(i) {
