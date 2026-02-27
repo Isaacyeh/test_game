@@ -318,6 +318,20 @@ function drawMinimap() {
     Math.PI * 2
   );
   ctx.fill();
+
+  // Direction
+  ctx.strokeStyle = "lime";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(
+    startX + VIEW_RADIUS * MINIMAP_SCALE + (VIEW_RADIUS / 2),
+    startY + VIEW_RADIUS * MINIMAP_SCALE + (VIEW_RADIUS / 2)
+  );
+  ctx.lineTo(
+    startX + (VIEW_RADIUS + Math.cos(player.angle) * 0.8) * MINIMAP_SCALE + (VIEW_RADIUS / 2),
+    startY + (VIEW_RADIUS + Math.sin(player.angle) * 0.8) * MINIMAP_SCALE + (VIEW_RADIUS / 2)
+  );
+  ctx.stroke();
 }
 
 function render() {
