@@ -5,6 +5,34 @@
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
+
+    <span>
+      <div id = "menu-button" onmouseover = "rotate()" onmouseout = "unrotate()">
+          <div class = "bars"></div>
+          <div class = "bars"></div>
+          <div class = "bars"></div>
+          <div class = "bars"></div>
+          <div class = "bars"></div>
+          <div class = "bars"></div>
+          <div class = "bars"></div>
+          <div class = "bars"></div>
+      </div>
+      <div class="title">
+          <h1>My Gradebook</h1>
+      </div>
+      
+      <div id="menu" class="menu hidden">
+          <ul>
+              <li><a href="#">Home</a></li>
+              <li><a href="#">Attendance</a></li>
+              <li><a href="#">Gradebook</a></li>
+              <li><a href="#">Home</a></li>
+          </ul>
+      </div>
+    </span>
+
+    <script src = "menu/menu.js"></script>
+
     <canvas id="game" width="800" height="500"></canvas>
 
     <div id="chatContainer">
