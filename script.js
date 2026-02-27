@@ -76,7 +76,7 @@ function isWall(x, y) {
 // ====================
 // PLAYER STATE
 // ====================
-let player = { x: 100, y: 17, angle: 0 };
+let player = { x: 4, y: 17, angle: 0 };
 let z = 0;
 let zVel = 0;
 let onGround = true;
