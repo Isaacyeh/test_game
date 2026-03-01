@@ -16,30 +16,30 @@ const state = {
 let keysRef = null;
 let wsRef = null;
 
+// init
 export function initPlayer(keys, ws) {
   keysRef = keys;
   wsRef = ws;
 }
+export function setIsChatting(value) { state.isChatting = value; }
+export function setMyId(id) { state.myId = id; }
+export function setOthers(nextOthers) { state.others = { ...nextOthers }; }
+export function getState() { return state; }
 
-export function setIsChatting(value) {
-  state.isChatting = value;
+function canMove(x, y) {
+  return (
+    !isWall(x + PLAYER_RADIUS, y + PLAYER_RADIUS) &&
+    !isWall(x - PLAYER_RADIUS, y + PLAYER_RADIUS) &&
+    !isWall(x + PLAYER_RADIUS, y - PLAYER_RADIUS) &&
+    !isWall(x - PLAYER_RADIUS, y - PLAYER_RADIUS)
+  );
 }
 
-export function setMyId(id) {
-  state.myId = id;
-}
-
-export function setOthers(nextOthers) {
-  state.others = { ...nextOthers };
-}
-
-export function getState() {
-  return state;
-}
 //update loop
 export function update() {
   if (!keysRef || !wsRef) return;
   const { player } = state;
+
   if (state.isChatting) {
     if (wsRef.readyState === WebSocket.OPEN) {
       wsRef.send(
@@ -53,8 +53,8 @@ export function update() {
     }
     return;
   }
-  
-  //arrow keys turn camera
+
+  //movement / controls
   if (keysRef.ArrowLeft) player.angle -= 0.04;
   if (keysRef.ArrowRight) player.angle += 0.04;
 
@@ -77,28 +77,31 @@ export function update() {
     moveX += Math.cos(player.angle + Math.PI / 2) * MOVE_SPEED;
     moveY += Math.sin(player.angle + Math.PI / 2) * MOVE_SPEED;
   }
+
+  //collision
+  const nx = player.x + moveX;
+  const ny = player.y + moveY;
+
+  if (canMove(nx, ny)) {
+    player.x = nx;
+    player.y = ny;
+  } else {
+    // X 
+    if (canMove(nx, player.y)) {
+      player.x = nx;
+    }
+    // Y 
+    if (canMove(player.x, ny)) {
+      player.y = ny;
+    }
+  }
+
   //jump
   if (keysRef[" "] && state.onGround) {
     state.zVel = JUMP_VELOCITY;
     state.onGround = false;
   }
-  //x-collision
-  const nx = player.x + moveX;
-  if (
-    !isWall(nx + PLAYER_RADIUS, player.y) &&
-    !isWall(nx - PLAYER_RADIUS, player.y)
-  ) {
-    player.x = nx;
-  }
-  //y-collision
-  const ny = player.y + moveY;
-  if (
-    !isWall(player.x, ny + PLAYER_RADIUS) &&
-    !isWall(player.x, ny - PLAYER_RADIUS)
-  ) {
-    player.y = ny;
-  }
-  
+
   state.zVel -= GRAVITY;
   state.z += state.zVel;
   state.z = Math.min(state.z, MAX_JUMP);
@@ -110,13 +113,6 @@ export function update() {
   }
 
   if (wsRef.readyState === WebSocket.OPEN) {
-    wsRef.send(
-      JSON.stringify({
-        x: player.x,
-        y: player.y,
-        angle: player.angle,
-        z: state.z,
-      })
-    );
+    wsRef.send( JSON.stringify({ x: player.x, y: player.y, angle: player.angle, z: state.z }));
   }
 }
