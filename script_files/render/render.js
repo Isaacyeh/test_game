@@ -1,9 +1,11 @@
-import { FOV, RAYS, JUMP_SCALE } from "./script_files/constant.js";
-import { player } from ".script_files/chat.js";
+import { FOV, JUMP_SCALE } from "../constant.js";
+import { castRay } from "./castRay.js";
+import { drawMinimap } from "./minimap.js";
+import { getState } from "../player.js";
 
-function render(drawMinimap, castRay) {
-  const canvas = document.getElementById("game");
-  const ctx = canvas.getContext("2d");
+export function render(canvas, ctx) {
+  const { player, z, others, myId } = getState();
+  const rays = canvas.width;
   const jumpOffset = z * JUMP_SCALE;
   const horizon = canvas.height / 2 + jumpOffset;
 
@@ -20,11 +22,11 @@ function render(drawMinimap, castRay) {
   let prevTileX = Math.floor(player.x);
   let prevTileY = Math.floor(player.y);
 
-  for (let i = 0; i < RAYS; i++) {
-    const rayAngle = player.angle - FOV / 2 + (i / RAYS) * FOV;
-    const hit = castRay;
+  for (let i = 0; i < rays; i++) {
+    const rayAngle = player.angle - FOV / 2 + (i / rays) * FOV;
+    const hit = castRay(rayAngle);
     const dist = hit.dist * Math.cos(rayAngle - player.angle);
-    const height = canvas.height / dist;
+    const height = canvas.height / Math.max(dist, 0.0001);
 
     depth[i] = dist;
 
@@ -69,13 +71,12 @@ function render(drawMinimap, castRay) {
     const sx = (0.5 + norm / FOV) * canvas.width;
     if (depth[Math.floor(sx)] < dist) continue;
 
-    const size = canvas.height / dist;
+    const size = canvas.height / Math.max(dist, 0.0001);
     const sy = horizon - size / 2 - (p.z || 0) * JUMP_SCALE;
 
     ctx.fillStyle = "red";
     ctx.fillRect(sx - size / 4, sy, size / 2, size);
   }
 
-  drawMinimap;
-  requestAnimationFrame(loop);
+  drawMinimap(ctx);
 }
