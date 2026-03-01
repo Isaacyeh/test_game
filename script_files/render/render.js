@@ -74,8 +74,29 @@ export function render(canvas, ctx) {
     const size = canvas.height / Math.max(dist, 0.0001);
     const sy = horizon - size / 2 - (p.z || 0) * JUMP_SCALE;
 
+    const bodyWidth = size / 2;
+    const bodyX = sx - bodyWidth / 2;
+
     ctx.fillStyle = "red";
-    ctx.fillRect(sx - size / 4, sy, size / 2, size);
+    ctx.fillRect(bodyX, sy, bodyWidth, size);
+
+    //nametag
+    const name = p.username || "Anonymous";
+    const fontSize = Math.max(10, Math.min(18, size / 6));
+    ctx.font = `${fontSize}px Arial`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "bottom";
+
+    const labelY = sy - 6;
+    const textWidth = ctx.measureText(name).width;
+    const bgWidth = textWidth + 8;
+    const bgHeight = fontSize + 4;
+
+    ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
+    ctx.fillRect(sx - bgWidth / 2, labelY - bgHeight, bgWidth, bgHeight);
+
+    ctx.fillStyle = "#fff";
+    ctx.fillText(name, sx, labelY - 2);
   }
 
   drawMinimap(ctx);
