@@ -1,4 +1,4 @@
-import { isChatting } from "./player";
+import { setIsChatting } from "./player.js";
 
 export function setupChat(ws, chatInput, chat, sendBtn, username) {
   function sendMessage() {
@@ -19,10 +19,10 @@ export function setupChat(ws, chatInput, chat, sendBtn, username) {
     if (e.key === "Enter") sendMessage();
   });
   chatInput.addEventListener("focus", () => {
-    isChatting = true;
+    setIsChatting(true);
   });
   chatInput.addEventListener("blur", () => {
-    isChatting = false;
+    setIsChatting(false);
   });
   document.addEventListener("keydown", (e) => {
     if (e.key === "/") {
