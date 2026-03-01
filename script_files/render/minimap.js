@@ -1,9 +1,12 @@
-import { MINIMAP_SCALE, MINIMAP_PADDING } from "./constant";
+import { MINIMAP_SCALE, MINIMAP_PADDING } from "../constant.js";
+import { map, mapStr } from "../map.js";
+import { getState } from "../player.js";
 
-function drawMinimap() {
+export function drawMinimap(ctx) {
+  const { player, others, myId } = getState();
   const VIEW_RADIUS = 12;
-  const startX = MINIMAP_PADDING,
-    startY = MINIMAP_PADDING;
+  const startX = MINIMAP_PADDING;
+  const startY = MINIMAP_PADDING;
 
   ctx.fillStyle = "rgba(0,0,0,0.6)";
   ctx.fillRect(
@@ -13,13 +16,13 @@ function drawMinimap() {
     VIEW_RADIUS * 2 * MINIMAP_SCALE + 8
   );
 
-  const centerX = Math.floor(player.x),
-    centerY = Math.floor(player.y);
+  const centerX = Math.floor(player.x);
+  const centerY = Math.floor(player.y);
 
   for (let y = -VIEW_RADIUS; y < VIEW_RADIUS; y++) {
     for (let x = -VIEW_RADIUS; x < VIEW_RADIUS; x++) {
-      const mapX = centerX + x,
-        mapY = centerY + y;
+      const mapX = centerX + x;
+      const mapY = centerY + y;
       if (map[mapY]?.[mapX] === mapStr) {
         ctx.fillStyle = "#888";
         ctx.fillRect(
@@ -35,8 +38,8 @@ function drawMinimap() {
   for (const id in others) {
     if (id === myId) continue;
     const p = others[id];
-    const dx = p.x - player.x,
-      dy = p.y - player.y;
+    const dx = p.x - player.x;
+    const dy = p.y - player.y;
     if (Math.abs(dx) > VIEW_RADIUS || Math.abs(dy) > VIEW_RADIUS) continue;
     ctx.fillStyle = "red";
     ctx.beginPath();
@@ -53,8 +56,8 @@ function drawMinimap() {
   ctx.fillStyle = "lime";
   ctx.beginPath();
   ctx.arc(
-    startX + VIEW_RADIUS * MINIMAP_SCALE + VIEW_RADIUS / 2,
-    startY + VIEW_RADIUS * MINIMAP_SCALE + VIEW_RADIUS / 2,
+    startX + VIEW_RADIUS * MINIMAP_SCALE,
+    startY + VIEW_RADIUS * MINIMAP_SCALE,
     4,
     0,
     Math.PI * 2
