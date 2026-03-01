@@ -18,6 +18,8 @@ export function drawMinimap(ctx) {
 
   const centerX = Math.floor(player.x);
   const centerY = Math.floor(player.y);
+  const fracX = player.x - centerX;
+  const fracY = player.y - centerY;
 
   for (let y = -VIEW_RADIUS; y < VIEW_RADIUS; y++) {
     for (let x = -VIEW_RADIUS; x < VIEW_RADIUS; x++) {
@@ -26,8 +28,8 @@ export function drawMinimap(ctx) {
       if (map[mapY]?.[mapX] === mapStr) {
         ctx.fillStyle = "#888";
         ctx.fillRect(
-          startX + (x + VIEW_RADIUS) * MINIMAP_SCALE,
-          startY + (y + VIEW_RADIUS) * MINIMAP_SCALE,
+          startX + (x + VIEW_RADIUS - fracX) * MINIMAP_SCALE,
+          startY + (y + VIEW_RADIUS - fracY) * MINIMAP_SCALE,
           MINIMAP_SCALE,
           MINIMAP_SCALE
         );
@@ -63,4 +65,18 @@ export function drawMinimap(ctx) {
     Math.PI * 2
   );
   ctx.fill();
+
+  // Direction
+  ctx.strokeStyle = "lime";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(
+    startX + VIEW_RADIUS * MINIMAP_SCALE,
+    startY + VIEW_RADIUS * MINIMAP_SCALE
+  );
+  ctx.lineTo(
+    startX + (VIEW_RADIUS + Math.cos(player.angle) * 0.8) * MINIMAP_SCALE,
+    startY + (VIEW_RADIUS + Math.sin(player.angle) * 0.8) * MINIMAP_SCALE
+  );
+  ctx.stroke();
 }
