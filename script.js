@@ -1,12 +1,17 @@
-import { update } from "./script_files/player.js";
+import { initPlayer, update, getState, setMyId, setOthers } from "./script_files/player.js";
 import { setupChat } from "./script_files/chat.js";
 import { render } from "./script_files/render/render.js";
-import { castRay } from "./script_files/render/castRay.js";
-import { drawMinimap } from "./script_files/render/minimap.js";
 
 const keys = {};
-onkeydown = (e) => (keys[e.key] = true);
-onkeyup = (e) => (keys[e.key] = false);
+window.addEventListener("keydown", (e) => {
+  keys[e.key] = true;
+});
+window.addEventListener("keyup", (e) => {
+  keys[e.key] = false;
+});
+
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
 
 // chat elements
 const chat = document.getElementById("chat");
@@ -16,19 +21,21 @@ const sendBtn = document.getElementById("sendBtn");
 const wsProtocol = location.protocol === "https:" ? "wss://" : "ws://";
 const ws = new WebSocket(wsProtocol + location.host);
 
+const { username } = getState();
 setupChat(ws, chatInput, chat, sendBtn, username);
+initPlayer(keys, ws);
 
-// NETWORK EVENTS (idk what this does, might need it)
-/*
+// NETWORK EVENTS
 ws.addEventListener("message", (e) => {
   const data = JSON.parse(e.data);
-  if (data.type === "init") myId = data.id;
-  if (data.type === "players") others = { ...data.players };
+  if (data.type === "init") setMyId(data.id);
+  if (data.type === "players") setOthers(data.players);
 });
-*/
+
 function loop() {
   update();
-  render(drawMinimap(), castRay(rayAngle));
+  render(canvas, ctx);
+  requestAnimationFrame(loop);
 }
 
 loop();
