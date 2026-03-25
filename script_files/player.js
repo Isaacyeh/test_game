@@ -63,6 +63,10 @@ export function setMyId(id) {
 }
 
 export function setOthers(nextOthers) {
+  // Sync our own health from the server's authoritative value
+  if (state.myId && nextOthers[state.myId] !== undefined) {
+    state.health = nextOthers[state.myId].health;
+  }
   state.others = { ...nextOthers };
 }
 
