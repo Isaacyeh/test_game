@@ -58,22 +58,18 @@ export function render(canvas, ctx) {
 
     depth[i] = dist;
 
-    // Determine wall face color
-    const faceColor = "#ffffff"; // main face color
-    const edgeColor = "#000000"; // edge color
+    const faceColor = "#ffffff";
+    const edgeColor = "#000000";
 
-    // Draw main face
     ctx.fillStyle = faceColor;
     ctx.fillRect(i, horizon - height / 2, 1, height);
 
-    // --- Edge detection: check if ray crossed tile boundary ---
     const hitX = player.x + Math.cos(rayAngle) * hit.dist;
     const hitY = player.y + Math.sin(rayAngle) * hit.dist;
 
     const tileX = Math.floor(hitX);
     const tileY = Math.floor(hitY);
 
-    // If the ray is entering a new tile horizontally or vertically, draw edge
     if (tileX !== prevTileX || tileY !== prevTileY) {
       ctx.fillStyle = edgeColor;
       ctx.fillRect(i, horizon - height / 2, 1, height);
@@ -83,7 +79,7 @@ export function render(canvas, ctx) {
     prevTileY = tileY;
   }
 
-  // Draw projectiles (self + remote players)
+  // Collect all projectiles (self + remote)
   const allProjectiles = [...projectiles];
   for (const id in others) {
     if (id === myId) continue;
@@ -91,90 +87,95 @@ export function render(canvas, ctx) {
     allProjectiles.push(...remoteProjectiles);
   }
 
+  // Collect all sprites and depth-sort them back-to-front
+  const sprites = [];
+
   for (const projectile of allProjectiles) {
-    const dx = projectile.x - player.x;
-    const dy = projectile.y - player.y;
-    const dist = Math.hypot(dx, dy);
-
-    const angle = Math.atan2(dy, dx) - player.angle;
-    const norm = Math.atan2(Math.sin(angle), Math.cos(angle));
-    if (Math.abs(norm) > FOV / 2) continue;
-
-    const sx = (0.5 + norm / FOV) * canvas.width;
-    const depthIndex = Math.floor(sx);
-    if (depthIndex < 0 || depthIndex >= depth.length) continue;
-    if (depth[depthIndex] < dist) continue;
-
-    const radius = Math.max(2, canvas.height / Math.max(dist * 10, 0.0001));
-    const sy = horizon - radius - (projectile.z || 0) * JUMP_SCALE;
-
-    drawSphere(ctx, sx, sy, radius);
+    sprites.push({ type: "projectile", data: projectile });
   }
 
-  // Draw other players
   for (const id in others) {
     if (id === myId) continue;
-    const p = others[id];
+    sprites.push({ type: "player", id, data: others[id] });
+  }
 
-    const dx = p.x - player.x;
-    const dy = p.y - player.y;
-    const dist = Math.hypot(dx, dy);
+  sprites.sort((a, b) => {
+    const distA = Math.hypot(a.data.x - player.x, a.data.y - player.y);
+    const distB = Math.hypot(b.data.x - player.x, b.data.y - player.y);
+    return distB - distA; // farthest first so closer sprites draw on top
+  });
 
-    const angle = Math.atan2(dy, dx) - player.angle;
-    const norm = Math.atan2(Math.sin(angle), Math.cos(angle));
-    if (Math.abs(norm) > FOV / 2) continue;
+  for (const sprite of sprites) {
+    if (sprite.type === "projectile") {
+      const projectile = sprite.data;
+      const dx = projectile.x - player.x;
+      const dy = projectile.y - player.y;
+      const dist = Math.hypot(dx, dy);
+      const angle = Math.atan2(dy, dx) - player.angle;
+      const norm = Math.atan2(Math.sin(angle), Math.cos(angle));
+      if (Math.abs(norm) > FOV / 2) continue;
+      const sx = (0.5 + norm / FOV) * canvas.width;
+      const depthIndex = Math.floor(sx);
+      if (depthIndex < 0 || depthIndex >= depth.length) continue;
+      if (depth[depthIndex] < dist) continue;
+      const radius = Math.max(2, canvas.height / Math.max(dist * 10, 0.0001));
+      const sy = horizon - radius - (projectile.z || 0) * JUMP_SCALE;
+      drawSphere(ctx, sx, sy, radius);
+    } else {
+      const p = sprite.data;
+      const dx = p.x - player.x;
+      const dy = p.y - player.y;
+      const dist = Math.hypot(dx, dy);
+      const angle = Math.atan2(dy, dx) - player.angle;
+      const norm = Math.atan2(Math.sin(angle), Math.cos(angle));
+      if (Math.abs(norm) > FOV / 2) continue;
+      const sx = (0.5 + norm / FOV) * canvas.width;
+      const sxIndex = Math.floor(sx);
+      if (sxIndex < 0 || sxIndex >= depth.length) continue;
+      if (depth[sxIndex] < dist) continue;
+      const size = canvas.height / Math.max(dist, 0.0001);
+      const sy = horizon - size / 2 - (p.z || 0) * JUMP_SCALE;
+      const bodyWidth = size / 2;
+      const bodyX = sx - bodyWidth / 2;
 
-    const sx = (0.5 + norm / FOV) * canvas.width;
-    const sxIndex = Math.floor(sx);
-    if (sxIndex < 0 || sxIndex >= depth.length) continue;
-    if (depth[sxIndex] < dist) continue;
+      ctx.fillStyle = "red";
+      ctx.fillRect(bodyX, sy, bodyWidth, size);
 
-    const size = canvas.height / Math.max(dist, 0.0001);
-    const sy = horizon - size / 2 - (p.z || 0) * JUMP_SCALE;
+      // Nametag
+      const name = p.username || "Anonymous";
+      const fontSize = Math.max(10, Math.min(18, size / 6));
+      ctx.font = `${fontSize}px Arial`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "bottom";
+      const labelY = sy - 6;
+      const textWidth = ctx.measureText(name).width;
+      const bgWidth = textWidth + 8;
+      const bgHeight = fontSize + 4;
+      ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
+      ctx.fillRect(sx - bgWidth / 2, labelY - bgHeight, bgWidth, bgHeight);
+      ctx.fillStyle = "#fff";
+      ctx.fillText(name, sx, labelY - 2);
 
-    const bodyWidth = size / 2;
-    const bodyX = sx - bodyWidth / 2;
-
-    ctx.fillStyle = "red";
-    ctx.fillRect(bodyX, sy, bodyWidth, size);
-
-    //nametag
-    const name = p.username || "Anonymous";
-    const fontSize = Math.max(10, Math.min(18, size / 6));
-    ctx.font = `${fontSize}px Arial`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "bottom";
-
-    const labelY = sy - 6;
-    const textWidth = ctx.measureText(name).width;
-    const bgWidth = textWidth + 8;
-    const bgHeight = fontSize + 4;
-
-    ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
-    ctx.fillRect(sx - bgWidth / 2, labelY - bgHeight, bgWidth, bgHeight);
-
-    ctx.fillStyle = "#fff";
-    ctx.fillText(name, sx, labelY - 2);
-
-    // health bar at player feet with width matching sprite width
-    const remoteHealth = Number.isFinite(p.health) ? p.health : MAX_HEALTH;
-    const barWidth = bodyWidth;
-    const barHeight = Math.max(6, size * 0.07);
-    const barX = sx - barWidth / 2;
-    const barY = sy + size + 6;
-    drawHealthBar(
-      ctx,
-      barX,
-      barY,
-      barWidth,
-      barHeight,
-      remoteHealth / MAX_HEALTH
-    );
+      // Health bar
+      const remoteHealth = Number.isFinite(p.health) ? p.health : MAX_HEALTH;
+      const barWidth = bodyWidth;
+      const barHeight = Math.max(6, size * 0.07);
+      const barX = sx - barWidth / 2;
+      const barY = sy + size + 6;
+      drawHealthBar(
+        ctx,
+        barX,
+        barY,
+        barWidth,
+        barHeight,
+        remoteHealth / MAX_HEALTH
+      );
+    }
   }
 
   drawMinimap(ctx);
-  
-  // local HUD health bar near bottom, away from chat panel on right
+
+  // Local HUD health bar
   const hudWidth = Math.min(420, canvas.width * 0.55);
   const hudHeight = 30;
   const hudX = 24;
