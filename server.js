@@ -14,12 +14,13 @@ const HIT_DAMAGE = 0.1;
 const PROJECTILE_HIT_RADIUS = 0.6;
 const MAX_HEALTH = 1;
 
+const SPAWN = { x: 3, y: 17, angle: 0 };
+
 const players = {};
 const processedHits = new Set();
 
-// Throttle debug spam - only log closest miss every N ticks
 let debugTick = 0;
-const DEBUG_INTERVAL = 60; // every 60 updates, log closest miss
+const DEBUG_INTERVAL = 60;
 
 function broadcastPlayers() {
   const data = JSON.stringify({ type: "players", players });
@@ -53,24 +54,16 @@ function checkProjectileHits() {
     const shooter = players[shooterId];
     const projectiles = shooter.projectiles || [];
 
-    // Debug: log how many projectiles this shooter has (throttled)
     if (shouldLogMiss && projectiles.length > 0) {
       broadcastDebug(
-        `${shooter.username} has ${
-          projectiles.length
-        } projectile(s) in flight. IDs: ${projectiles
-          .map((p) => p.id ?? "NO_ID")
-          .join(", ")}`
+        `${shooter.username} has ${projectiles.length} projectile(s) in flight. IDs: ${projectiles.map((p) => p.id ?? "NO_ID").join(", ")}`
       );
     }
 
     for (const projectile of projectiles) {
-      // Critical check: does projectile have an id?
       if (projectile.id == null) {
         if (shouldLogMiss) {
-          broadcastDebug(
-            `WARNING: projectile from ${shooter.username} has no ID — hit detection skipped!`
-          );
+          broadcastDebug(`WARNING: projectile from ${shooter.username} has no ID — hit detection skipped!`);
         }
         continue;
       }
@@ -78,6 +71,9 @@ function checkProjectileHits() {
       for (const victimId in players) {
         if (victimId === shooterId) continue;
         const victim = players[victimId];
+
+        // Don't damage already-dead players
+        if (victim.health <= 0) continue;
 
         const hitKey = `${shooterId}:${projectile.id}:${victimId}`;
         if (processedHits.has(hitKey)) continue;
@@ -87,7 +83,6 @@ function checkProjectileHits() {
         const distance = Math.hypot(dx, dy);
         const zDistance = Math.abs((projectile.z || 0) - (victim.z || 0));
 
-        // Track closest miss for debug
         if (distance < closestMissDist) {
           closestMissDist = distance;
           closestMiss = {
@@ -103,14 +98,9 @@ function checkProjectileHits() {
         }
 
         if (distance <= PROJECTILE_HIT_RADIUS && zDistance <= 0.5) {
-          victim.health = Math.max(
-            0,
-            Number((victim.health - HIT_DAMAGE).toFixed(3))
-          );
+          victim.health = Math.max(0, Number((victim.health - HIT_DAMAGE).toFixed(3)));
           processedHits.add(hitKey);
-          const msg = `HIT! ${shooter.username} → ${
-            victim.username
-          } | dist=${distance.toFixed(3)} | health now ${victim.health}`;
+          const msg = `HIT! ${shooter.username} → ${victim.username} | dist=${distance.toFixed(3)} | health now ${victim.health}`;
           console.log(msg);
           broadcastDebug(msg);
         }
@@ -118,14 +108,12 @@ function checkProjectileHits() {
     }
   }
 
-  // Log closest miss periodically so you can see if projectiles are even near the player
   if (shouldLogMiss && closestMiss) {
     broadcastDebug(
       `Closest miss: ${closestMiss.shooter}→${closestMiss.victim} dist=${closestMiss.distance} zdist=${closestMiss.zDistance} | proj=(${closestMiss.px},${closestMiss.py}) victim=(${closestMiss.vx},${closestMiss.vy})`
     );
   }
 
-  // Clean up expired hit keys
   const activeKeys = new Set();
   for (const shooterId in players) {
     for (const p of players[shooterId].projectiles || []) {
@@ -144,9 +132,9 @@ wss.on("connection", (ws) => {
   ws.id = id;
   ws.username = "Anonymous";
   players[id] = {
-    x: 3,
-    y: 17,
-    angle: 0,
+    x: SPAWN.x,
+    y: SPAWN.y,
+    angle: SPAWN.angle,
     z: 0,
     username: ws.username,
     projectiles: [],
@@ -168,12 +156,28 @@ wss.on("connection", (ws) => {
       broadcastChat(ws.username, data.message);
       return;
     }
+
+    if (data.type === "respawn") {
+      if (players[id]) {
+        players[id].health = MAX_HEALTH;
+        players[id].projectiles = [];
+        players[id].x = SPAWN.x;
+        players[id].y = SPAWN.y;
+        players[id].angle = SPAWN.angle;
+        players[id].z = 0;
+        broadcastDebug(`${ws.username} respawned`);
+        broadcastPlayers();
+      }
+      return;
+    }
+
     if (data.type === "setName") {
       ws.username = String(data.name || "Anonymous").trim() || "Anonymous";
       if (players[id]) players[id].username = ws.username;
       broadcastDebug(`Player set name: ${ws.username}`);
       return;
     }
+
     if (players[id]) {
       const serverHealth = players[id].health;
       players[id] = { ...players[id], ...data, health: serverHealth };
