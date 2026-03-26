@@ -13,8 +13,10 @@ import {
 } from "./constant.js";
 import { isWall } from "./map.js";
 
+const SPAWN = { x: 3, y: 17, angle: 0 };
+
 const state = {
-  player: { x: 3, y: 17, angle: 0 },
+  player: { ...SPAWN },
   z: 0,
   zVel: 0,
   onGround: true,
@@ -23,6 +25,10 @@ const state = {
   myId: null,
   projectiles: [],
   health: MAX_HEALTH,
+  isDead: false,
+  deathTimer: 0,
+  canRespawn: false,
+  isRespawning: false, // ADD THIS
   username:
     (prompt("Enter your username:") || "Anonymous").trim() || "Anonymous",
 };
@@ -45,7 +51,6 @@ function debugLog(msg) {
 
 let debugTick = 0;
 let closestEver = Infinity;
-// Track whether we already logged a send with projectiles this session
 let hasEverSentProjectile = false;
 
 export function initPlayer(keys, ws) {
@@ -63,15 +68,47 @@ export function setMyId(id) {
 }
 
 export function setOthers(nextOthers) {
-  // Sync our own health from the server's authoritative value
   if (state.myId && nextOthers[state.myId] !== undefined) {
-    state.health = nextOthers[state.myId].health;
+    const serverHealth = nextOthers[state.myId].health;
+    if (!state.isDead && !state.isRespawning && serverHealth <= 0) {
+      state.isDead = true;
+      state.deathTimer = 0;
+      state.canRespawn = false;
+      state.projectiles = [];
+    }
+    if (!state.isDead) {
+      state.health = serverHealth;
+    }
   }
   state.others = { ...nextOthers };
 }
 
 export function getState() {
   return state;
+}
+
+export function respawn() {
+  if (!state.isDead || !state.canRespawn) return;
+  state.isDead = false;
+  state.canRespawn = false;
+  state.deathTimer = 0;
+  state.isRespawning = true; // ADD: block setOthers from re-killing us
+  state.player.x = SPAWN.x;
+  state.player.y = SPAWN.y;
+  state.player.angle = SPAWN.angle;
+  state.z = 0;
+  state.zVel = 0;
+  state.onGround = true;
+  state.health = MAX_HEALTH;
+  state.projectiles = [];
+  if (wsRef && wsRef.readyState === WebSocket.OPEN) {
+    wsRef.send(JSON.stringify({ type: "respawn" }));
+  }
+  // Clear the guard after 120 frames (2 seconds) — enough time for
+  // the stale health=0 broadcasts to flush through
+  setTimeout(() => {
+    state.isRespawning = false;
+  }, 2000);
 }
 
 function canMove(x, y) {
@@ -83,90 +120,31 @@ function canMove(x, y) {
   );
 }
 
-function updateHealthFromHits() {
-  debugTick++;
-  const shouldLog = debugTick % 60 === 0;
-
-  const activeRemoteProjectileIds = new Set();
-  const allOtherIds = Object.keys(state.others);
-  const otherIds = allOtherIds.filter((id) => id !== state.myId);
-
-  if (shouldLog) {
-    debugLog(
-      `--- TICK ${debugTick} | myId=${state.myId} | health=${state.health} ---`
-    );
-    debugLog(
-      `others object has ${allOtherIds.length} keys total, ${otherIds.length} after filtering self`
-    );
-    for (const id of allOtherIds) {
-      const p = state.others[id];
-      const projs = p?.projectiles || [];
-      debugLog(
-        `  other[${id}] pos=(${p?.x?.toFixed(2)},${p?.y?.toFixed(
-          2
-        )}) projectiles=${projs.length}${
-          id === state.myId ? " <-- THIS IS ME" : ""
-        }`
-      );
-    }
-  }
-
-  for (const id of otherIds) {
-    const remoteProjectiles = state.others[id]?.projectiles || [];
-
-    for (const projectile of remoteProjectiles) {
-      const pid = projectile.id ?? null;
-      const projectileKey = pid !== null ? `${id}:${pid}` : null;
-
-      if (projectileKey) activeRemoteProjectileIds.add(projectileKey);
-      if (projectileKey && processedHits.has(projectileKey)) continue;
-
-      const dx = projectile.x - state.player.x;
-      const dy = projectile.y - state.player.y;
-      const distance = Math.hypot(dx, dy);
-      const zDistance = Math.abs((projectile.z || 0) - state.z);
-
-      if (distance < 5) {
-        debugLog(
-          `CLOSE: proj id=${pid} dist=${distance.toFixed(
-            3
-          )} zdist=${zDistance.toFixed(3)} proj=(${projectile.x.toFixed(
-            2
-          )},${projectile.y.toFixed(2)}) me=(${state.player.x.toFixed(
-            2
-          )},${state.player.y.toFixed(2)}) hitR=${PROJECTILE_HIT_RADIUS}`
-        );
-      }
-
-      if (distance < closestEver) {
-        closestEver = distance;
-        debugLog(`NEW CLOSEST: ${distance.toFixed(4)} from proj id=${pid}`);
-      }
-
-      if (distance <= PROJECTILE_HIT_RADIUS && zDistance <= 0.5) {
-        state.health = Math.max(
-          0,
-          Number((state.health - HIT_DAMAGE).toFixed(3))
-        );
-        if (projectileKey) processedHits.add(projectileKey);
-        debugLog(
-          `*** HIT! from ${id} proj=${pid} dist=${distance.toFixed(3)} health=${
-            state.health
-          } ***`
-        );
-      }
-    }
-  }
-
-  for (const key of processedHits) {
-    if (!activeRemoteProjectileIds.has(key)) {
-      processedHits.delete(key);
-    }
-  }
-}
-
 export function update() {
   if (!keysRef || !wsRef) return;
+
+  if (state.isDead) {
+    state.deathTimer++;
+    // Unlock respawn button after 5 seconds (300 frames)
+    if (state.deathTimer >= 300 && !state.canRespawn) {
+      state.canRespawn = true;
+    }
+    // Still broadcast position so others see us (frozen at death spot)
+    if (wsRef.readyState === WebSocket.OPEN) {
+      wsRef.send(
+        JSON.stringify({
+          x: state.player.x,
+          y: state.player.y,
+          angle: state.player.angle,
+          z: state.z,
+          projectiles: [],
+          health: state.health,
+        })
+      );
+    }
+    return;
+  }
+
   const { player } = state;
 
   if (!state.isChatting && keysRef.ArrowLeft) player.angle -= 0.04;
@@ -250,9 +228,6 @@ export function update() {
     return projectile.ttl > 0;
   });
 
-  updateHealthFromHits();
-
-  // KEY DEBUG: log what we actually transmit whenever projectiles are in flight
   if (wsRef.readyState === WebSocket.OPEN) {
     const payload = {
       x: player.x,
@@ -263,7 +238,6 @@ export function update() {
       health: state.health,
     };
 
-    // Log the first time we send projectiles, and every time count changes
     if (state.projectiles.length > 0 && !hasEverSentProjectile) {
       hasEverSentProjectile = true;
       debugLog(
