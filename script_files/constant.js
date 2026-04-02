@@ -15,5 +15,5 @@ export const PROJECTILE_LIFETIME = 120;
 export const PROJECTILE_START_Z = 0;
 //health constants
 export const MAX_HEALTH = 1;
-export const HIT_DAMAGE = 0.1;
+export const HIT_DAMAGE = -0.1;
 export const PROJECTILE_HIT_RADIUS = 0.6;
