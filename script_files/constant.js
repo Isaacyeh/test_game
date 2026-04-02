@@ -18,5 +18,5 @@ export const MAX_HEALTH = 1;
 export const HIT_DAMAGE = 0.1;
 export const PROJECTILE_HIT_RADIUS = 0.6;
 
-export const playerImage = new Image();
+export const PLAYERIMG = new Image();
 playerImage.src = "/path/to/your/player.png";
