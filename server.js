@@ -53,13 +53,14 @@ function checkProjectileHits() {
   for (const shooterId in players) {
     const shooter = players[shooterId];
     const projectiles = shooter.projectiles || [];
-
+    /* in flight debug
     if (shouldLogMiss && projectiles.length > 0) {
       broadcastDebug(
         `${shooter.username} has ${projectiles.length} projectile(s) in flight. IDs: ${projectiles.map((p) => p.id ?? "NO_ID").join(", ")}`
       );
     }
-
+    */
+    
     for (const projectile of projectiles) {
       if (projectile.id == null) {
         if (shouldLogMiss) {
@@ -142,7 +143,7 @@ wss.on("connection", (ws) => {
   };
 
   ws.send(JSON.stringify({ type: "init", id }));
-  broadcastDebug(`${ws.username} connected (id=${id})`);
+  //broadcastDebug(`${ws.username} connected (id=${id})`); connect debug
 
   ws.on("message", (msg) => {
     let data;
@@ -174,7 +175,7 @@ wss.on("connection", (ws) => {
     if (data.type === "setName") {
       ws.username = String(data.name || "Anonymous").trim() || "Anonymous";
       if (players[id]) players[id].username = ws.username;
-      broadcastDebug(`Player set name: ${ws.username}`);
+      //broadcastDebug(`Player set name: ${ws.username}`); set name debug
       return;
     }
 
