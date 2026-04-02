@@ -40,6 +40,7 @@ let nextProjectileId = 1;
 const processedHits = new Set();
 
 function debugLog(msg) {
+  /*
   const chat = document.getElementById("chat");
   if (!chat) return;
   const div = document.createElement("div");
@@ -47,6 +48,7 @@ function debugLog(msg) {
   div.textContent = `[CLIENT] ${msg}`;
   chat.appendChild(div);
   chat.scrollTop = chat.scrollHeight;
+  */
 }
 
 let debugTick = 0;
