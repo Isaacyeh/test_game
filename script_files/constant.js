@@ -19,4 +19,4 @@ export const HIT_DAMAGE = 0.1;
 export const PROJECTILE_HIT_RADIUS = 0.6;
 
 export const PLAYERIMG = new Image();
-playerImage.src = "/path/to/your/player.png";
+playerImage.src = "/script_files/buh.jpeg";
