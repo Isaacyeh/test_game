@@ -150,9 +150,10 @@ export function update() {
           angle: state.player.angle,
           z: state.z,
           projectiles: [],
-          health: state.health,          sneaking: state.player.sneaking,        })
+          health: state.health,
+          sneaking: state.player.sneaking,
+        })
       );
-      }
     }
     return;
   }
