@@ -161,29 +161,28 @@ export function update() {
   const { player } = state;
 
   if (!state.isChatting && keysRef.ArrowLeft) player.angle -= 0.04;
-  if (!state.isChatting && keysRef.ArrowRigh) player.angle += 0.04;
+  if (!state.isChatting && keysRef.ArrowRight) player.angle += 0.04;
 
   let moveX = 0;
   let moveY = 0;
 
   // Update sneaking state
   state.player.sneaking = !state.isChatting && keysRef.Shift;
+  let sneakSpeed = state.player.sneaking ? 0.4 : 1;
 
-  let sneakSpeed = state.player.sneaking ? 0.5 : 1;
-
-  if (!state.isChatting && keysRef.w) {
+  if (!state.isChatting && (keysRef.w || keysRef.W)) {
     moveX += Math.cos(player.angle) * MOVE_SPEED * sneakSpeed;
     moveY += Math.sin(player.angle) * MOVE_SPEED * sneakSpeed;
   }
-  if (!state.isChatting && keysRef.s) {
+  if (!state.isChatting && (keysRef.s || keysRef.S)) {
     moveX -= Math.cos(player.angle) * MOVE_SPEED * sneakSpeed;
     moveY -= Math.sin(player.angle) * MOVE_SPEED * sneakSpeed;
   }
-  if (!state.isChatting && keysRef.a) {
+  if (!state.isChatting && (keysRef.a || keysRef.A)) {
     moveX += Math.cos(player.angle - Math.PI / 2) * MOVE_SPEED * sneakSpeed;
     moveY += Math.sin(player.angle - Math.PI / 2) * MOVE_SPEED * sneakSpeed;
   }
-  if (!state.isChatting && keysRef.d) {
+  if (!state.isChatting && (keysRef.d || keysRef.D)) {
     moveX += Math.cos(player.angle + Math.PI / 2) * MOVE_SPEED * sneakSpeed;
     moveY += Math.sin(player.angle + Math.PI / 2) * MOVE_SPEED * sneakSpeed;
   }
