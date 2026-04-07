@@ -169,7 +169,7 @@ wss.on("connection", (ws) => {
         players[id].y = SPAWN.y;
         players[id].angle = SPAWN.angle;
         players[id].z = 0;
-        broadcastDebug(`${ws.username} respawned`);
+        //broadcastDebug(`${ws.username} respawned`);
         broadcastPlayers();
       }
       return;
