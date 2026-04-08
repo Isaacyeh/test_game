@@ -24,7 +24,6 @@ window.addEventListener("keydown", (e) => {
 document.addEventListener("keyup", (e) => {
   keys[e.key] = false;
 
-  // 🔥 CRITICAL FIX: clear both cases
   keys[e.key.toLowerCase()] = false;
   keys[e.key.toUpperCase()] = false;
 });
