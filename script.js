@@ -8,6 +8,7 @@ import {
 } from "./script_files/player.js";
 import { setupChat } from "./script_files/chat.js";
 import { render } from "./script_files/render/render.js";
+import { setCrosshairOptions } from "./script_files/crosshair.js";
 
 const keys = {};
 
@@ -19,7 +20,11 @@ window.addEventListener("mousemove", (e) => {
     mouse.dy = 0;
     return;
   }
-  if (document.pointerLockElement !== canvas) {
+  if (document.pointerLockElement === canvas) {
+    mouse.dx += e.movementX;
+    mouse.dy += e.movementY;
+    return;
+  } else {
     mouse.dx = 0;
     mouse.dy = 0;
     mouse.x = e.clientX;
@@ -48,7 +53,6 @@ const ctx = canvas.getContext("2d");
 const customizationMenuLink = document.getElementById("customizationMenuLink");
 const customizationOverlay = document.getElementById("customizationOverlay");
 const closeCustomization = document.getElementById("closeCustomization");
-const crosshair = document.getElementById("crosshair");
 const crosshairImageInput = document.getElementById("crosshairImageInput");
 const crosshairOpacityInput = document.getElementById("crosshairOpacityInput");
 const confirmCustomization = document.getElementById("confirmCustomization");
@@ -59,6 +63,7 @@ let pendingCrosshairOpacity = Number(crosshairOpacityInput.value);
 let appliedCrosshairOpacity = Number(crosshairOpacityInput.value);
 menu.classList.add("hidden");
 customizationOverlay.classList.add("hidden");
+setCrosshairOptions({ opacity: appliedCrosshairOpacity, imageSrc: "" });
 
 function clearInputState() {
   Object.keys(keys).forEach((key) => {
@@ -108,26 +113,6 @@ canvas.addEventListener("click", () => {
   canvas.requestPointerLock();
 });
 
-canvas.addEventListener("mousedown", () => {
-  if (isCustomizationOpen()) return;
-  if (document.pointerLockElement !== canvas) {
-    canvas.requestPointerLock();
-  }
-});
-
-document.addEventListener("pointerlockchange", () => {
-  if (document.pointerLockElement === canvas) {
-    window.addEventListener("mousemove", onLockedMouseMove);
-  } else {
-    window.removeEventListener("mousemove", onLockedMouseMove);
-  }
-});
-
-function onLockedMouseMove(e) {
-  mouse.dx = e.movementX;
-  mouse.dy = e.movementY;
-}
-
 customizationMenuLink.addEventListener("click", (e) => {
   e.preventDefault();
   e.stopPropagation();
@@ -164,15 +149,10 @@ crosshairImageInput.addEventListener("change", (e) => {
 confirmCustomization.addEventListener("click", () => {
   appliedCrosshairImage = pendingCrosshairImage;
   appliedCrosshairOpacity = pendingCrosshairOpacity;
-  crosshair.style.opacity = String(appliedCrosshairOpacity);
-
-  if (appliedCrosshairImage) {
-    crosshair.style.backgroundImage = `url("${appliedCrosshairImage}")`;
-    crosshair.textContent = "";
-  } else {
-    crosshair.style.backgroundImage = "none";
-    crosshair.textContent = "+";
-  }
+  setCrosshairOptions({
+    opacity: appliedCrosshairOpacity,
+    imageSrc: appliedCrosshairImage,
+  });
 
   closeCustomizationOverlay();
 });
