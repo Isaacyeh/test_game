@@ -19,13 +19,13 @@ window.addEventListener("mousemove", (e) => {
     mouse.dy = 0;
     return;
   }
-  if (document.pointerLockElement === canvas) return; // locked, handled separately
-  const newX = e.clientX;
-  const newY = e.clientY;
-  mouse.dx = newX - (mouse.x || newX);
-  mouse.dy = newY - (mouse.y || newY);
-  mouse.x = newX;
-  mouse.y = newY;
+  if (document.pointerLockElement !== canvas) {
+    mouse.dx = 0;
+    mouse.dy = 0;
+    mouse.x = e.clientX;
+    mouse.y = e.clientY;
+    return;
+  }
 });
 
 window.addEventListener("keydown", (e) => {
@@ -104,8 +104,15 @@ function closeCustomizationOverlay() {
 
 // Pointer lock setup
 canvas.addEventListener("click", () => {
-  if (isAnyMenuOpen()) return;
+  if (isCustomizationOpen()) return;
   canvas.requestPointerLock();
+});
+
+canvas.addEventListener("mousedown", () => {
+  if (isCustomizationOpen()) return;
+  if (document.pointerLockElement !== canvas) {
+    canvas.requestPointerLock();
+  }
 });
 
 document.addEventListener("pointerlockchange", () => {
