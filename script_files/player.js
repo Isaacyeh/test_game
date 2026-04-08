@@ -34,7 +34,7 @@ const state = {
   isRespawning: false,
   invincibilityTimer: 0, // Track frames of invincibility
   inMenu: false,
-  sprite: "https://t4.ftcdn.net/jpg/02/35/75/31/360_F_235753132_ZvqBgf2hHKbZCYps4VwtT8gnLtWQXSwx.jpg", // Default sprite
+  sprite: "https://www.clker.com/cliparts/a/4/1/d/1301963432622081819stick_figure%20(1).png", // Default sprite
   username:
     (prompt("Enter your username:") || "Anonymous").trim() || "Anonymous",
 };
