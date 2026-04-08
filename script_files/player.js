@@ -10,6 +10,7 @@ import {
   MAX_HEALTH,
   HIT_DAMAGE,
   PROJECTILE_HIT_RADIUS,
+  SPAWN_INVINCIBILITY_DURATION,
 } from "./constant.js";
 import { isWall } from "./map.js";
 
@@ -31,7 +32,10 @@ const state = {
   hasShot: true,
   cooldown: 0,
   canRespawn: false,
-  isRespawning: false, // ADD THIS
+  isRespawning: false,
+  invincibilityTimer: 0, // Track frames of invincibility
+  inMenu: false,
+  sprite: "https://www.clker.com/cliparts/a/4/1/d/1301963432622081819stick_figure%20(1).png", // Default sprite
   username:
     (prompt("Enter your username:") || "Anonymous").trim() || "Anonymous",
 };
@@ -81,20 +85,45 @@ export function setMyId(id) {
 }
 
 export function setOthers(nextOthers) {
-  if (state.myId && nextOthers[state.myId] !== undefined) {
-    const serverHealth = nextOthers[state.myId].health;
-    if (!state.isDead && !state.isRespawning && serverHealth <= 0) {
-      state.health = 0;
-      state.isDead = true;
-      state.deathTimer = 0;
-      state.canRespawn = false;
-      state.projectiles = [];
+  const filtered = { ...nextOthers };
+  if (state.myId && filtered[state.myId] !== undefined) {
+    const serverHealth = filtered[state.myId].health;
+    if (!state.inMenu) {
+      if (!state.isDead && !state.isRespawning && serverHealth <= 0) {
+        state.health = 0;
+        state.isDead = true;
+        state.deathTimer = 0;
+        state.canRespawn = false;
+        state.projectiles = [];
+      }
+      if (!state.isDead) {
+        state.health = serverHealth;
+      }
     }
-    if (!state.isDead) {
-      state.health = serverHealth;
+    delete filtered[state.myId];
+  }
+  state.others = filtered;
+}
+
+export function setSprite(url) {
+  state.sprite = url;
+}
+
+export function setMenuOpen(value) {
+  state.inMenu = Boolean(value);
+  if (value) {
+    // When menu opens, notify server and grant invincibility
+    if (wsRef && wsRef.readyState === WebSocket.OPEN) {
+      wsRef.send(JSON.stringify({ type: "menuOpen" }));
+    }
+  } else {
+    // When menu closes, reset to full health and notify server
+    state.health = MAX_HEALTH;
+    state.invincibilityTimer = 0;
+    if (wsRef && wsRef.readyState === WebSocket.OPEN) {
+      wsRef.send(JSON.stringify({ type: "menuClosed" }));
     }
   }
-  state.others = { ...nextOthers };
 }
 
 export function getState() {
@@ -107,6 +136,7 @@ export function respawn() {
   state.canRespawn = false;
   state.deathTimer = 0;
   state.isRespawning = true; // ADD: block setOthers from re-killing us
+  state.invincibilityTimer = SPAWN_INVINCIBILITY_DURATION; // 3 seconds of invincibility
   state.player.x = SPAWN.x;
   state.player.y = SPAWN.y;
   state.player.angle = SPAWN.angle;
@@ -139,6 +169,16 @@ function canMove(x, y) {
 
 export function update() {
   if (!keysRef || !wsRef || !mouseRef) return;
+
+  if (state.inMenu) {
+    // Block all input while menu is open
+    return;
+  }
+
+  // Decrement invincibility timer when not in menu
+  if (state.invincibilityTimer > 0) {
+    state.invincibilityTimer--;
+  }
 
   if (state.isDead) {
     state.deathTimer++;

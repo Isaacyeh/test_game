@@ -8,6 +8,7 @@ import {
 } from "./script_files/player.js";
 import { setupChat } from "./script_files/chat.js";
 import { render } from "./script_files/render/render.js";
+import { showSpriteMenu } from "./script_files/UI/spriteMenu.js";
 import { setCrosshairOptions } from "./script_files/crosshair.js";
 
 const keys = {};
@@ -37,8 +38,12 @@ window.addEventListener("keydown", (e) => {
   if (isAnyMenuOpen()) return;
   keys[e.key] = true;
 });
-window.addEventListener("keyup", (e) => {
+document.addEventListener("keyup", (e) => {
   keys[e.key] = false;
+
+
+  keys[e.key.toLowerCase()] = false;
+  keys[e.key.toUpperCase()] = false;
 });
 window.addEventListener("mousedown", (e) => {
   if (isAnyMenuOpen()) return;
@@ -179,6 +184,12 @@ const ws = new WebSocket(wsProtocol + location.host);
 const { username } = getState();
 setupChat(ws, chatInput, chat, sendBtn, username);
 initPlayer(keys, ws, mouse);
+showSpriteMenu(() => {
+  if (ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: "setSprite", sprite: getState().sprite }));
+    ws.send(JSON.stringify({ type: "menuClosed" }));
+  }
+});
 
 // NETWORK EVENTS
 ws.addEventListener("message", (e) => {
