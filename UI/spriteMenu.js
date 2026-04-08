@@ -14,7 +14,7 @@ async function loadSprites() {
 function createSpriteMenu(resolve, onConfirm) {
   const menu = document.getElementById('spriteMenu');
   menu.innerHTML = `
-    <h2>Select Your Sprite</h2>
+    <h2>Select Your Character</h2>
     <div id="spriteGrid"></div>
     <div>
       <label for="customSprite">Or upload custom image:</label>
