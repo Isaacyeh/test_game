@@ -155,6 +155,10 @@ body {
   justify-content: center;
 }
 
+.overlay.hidden {
+  display: none;
+}
+
 .overlay-window {
   width: min(560px, 90vw);
   background: rgba(28, 28, 28, 0.9);
