@@ -113,7 +113,6 @@ function openCustomizationOverlay() {
   clearInputState();
   if (document.pointerLockElement === canvas) document.exitPointerLock();
 }
- 
 function closeCustomizationOverlay() {
   customizationOverlay.classList.add("hidden");
   customizationOverlay.setAttribute("aria-hidden", "true");
@@ -127,18 +126,15 @@ customizationMenuLink.addEventListener("click", (e) => {
   menu.classList.add("hidden");
   openCustomizationOverlay();
 });
- 
 closeCustomization.addEventListener("click", closeCustomizationOverlay);
 closeCustomization.addEventListener("pointerdown", (e) => e.preventDefault());
  
 customizationOverlay.addEventListener("click", (e) => {
   if (e.target === customizationOverlay) closeCustomizationOverlay();
 });
- 
 crosshairOpacityInput.addEventListener("input", (e) => {
   pendingCrosshairOpacity = Number(e.target.value);
 });
- 
 crosshairImageInput.addEventListener("change", (e) => {
   const file = e.target.files && e.target.files[0];
   if (!file) return;
@@ -149,7 +145,6 @@ crosshairImageInput.addEventListener("change", (e) => {
   pendingCrosshairBlobUrl = URL.createObjectURL(file);
   pendingCrosshairImage   = pendingCrosshairBlobUrl;
 });
- 
 confirmCustomization.addEventListener("click", () => {
   if (appliedCrosshairBlobUrl && appliedCrosshairBlobUrl !== pendingCrosshairBlobUrl) {
     URL.revokeObjectURL(appliedCrosshairBlobUrl);
@@ -219,7 +214,6 @@ showSpriteMenu(() => {
     ws.send(JSON.stringify({ type: "setSprite", sprite: getState().sprite }));
     ws.send(JSON.stringify({ type: "menuClosed" }));
   }
-});
  
 ws.addEventListener("message", (e) => {
   const data = JSON.parse(e.data);

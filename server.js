@@ -1,14 +1,33 @@
 const express = require("express");
 const http = require("http");
 const WebSocket = require("ws");
+const path = require("path");
  
 const app = express();
 const server = http.createServer(app);
-const wss = new WebSocket.Server({ server });
+ 
+// ── WebSocket server ──────────────────────────────────────────────────────────
+// Do NOT pass { server } to WebSocket.Server if you want to handle the upgrade
+// manually — but here we DO pass it so ws handles upgrades automatically.
+// The key is that we also handle the 'upgrade' event on the http server to
+// ensure Render's proxy correctly forwards WebSocket upgrades.
+const wss = new WebSocket.Server({ noServer: true });
+ 
+// Manually handle the HTTP upgrade so it works behind Render's proxy.
+// When { server } is passed directly some proxies interfere; noServer + manual
+// upgrade handling is more reliable on platforms like Render and Railway.
+server.on("upgrade", (request, socket, head) => {
+  wss.handleUpgrade(request, socket, head, (ws) => {
+    wss.emit("connection", ws, request);
+  });
+});
  
 const PORT = process.env.PORT || 3000;
  
-app.use(express.static(__dirname));
+// ── Static files ──────────────────────────────────────────────────────────────
+// Serve from __dirname but with explicit index so Render's health check gets
+// a fast response from GET /
+app.use(express.static(path.join(__dirname), { index: "index.html" }));
  
 // ── Shared constants (must be kept in sync with script_files/constant.js) ───
 const HIT_DAMAGE = 0.1;
@@ -24,11 +43,20 @@ const SPAWN_INVINCIBILITY_MS = 3000; // 3 real seconds
  
 const SPAWN = { x: 3, y: 17, angle: 0 };
  
-const players = {};
+const players      = {};
 const processedHits = new Set();
  
-// ── Helpers ──────────────────────────────────────────────────────────────────
+// ── Broadcast throttle (20 Hz) ────────────────────────────────────────────────
+let broadcastDirty = false;
  
+setInterval(() => {
+  if (broadcastDirty) {
+    broadcastDirty = false;
+    _doBroadcastPlayers();
+  }
+}, 1000 / 20);
+ 
+// ── Helpers ───────────────────────────────────────────────────────────────────
 function isFiniteNum(v) {
   return typeof v === "number" && Number.isFinite(v);
 }
@@ -57,16 +85,23 @@ function broadcastPlayers() {
       isInvincible: now < (p.invincibleUntil || 0),
     };
   }
-  const data = JSON.stringify({ type: "players", players: cleanedPlayers });
+  const msg = JSON.stringify({ type: "players", players: out });
   wss.clients.forEach((c) => {
-    if (c.readyState === WebSocket.OPEN) c.send(data);
+    if (c.readyState === WebSocket.OPEN) {
+      try { c.send(msg); } catch (_) {}
+    }
   });
 }
  
-function broadcastChat(name, message) {
-  const data = JSON.stringify({ type: "chat", name, message });
+function markDirty()         { broadcastDirty = true; }
+function broadcastPlayersNow() { broadcastDirty = false; _doBroadcastPlayers(); }
+ 
+function broadcastAll(obj) {
+  const msg = JSON.stringify(obj);
   wss.clients.forEach((c) => {
-    if (c.readyState === WebSocket.OPEN) c.send(data);
+    if (c.readyState === WebSocket.OPEN) {
+      try { c.send(msg); } catch (_) {}
+    }
   });
 }
  
@@ -78,18 +113,15 @@ function broadcastChatImage(name, imageData) {
 }
  
 function pointToSegmentDist(px, py, ax, ay, bx, by) {
-  const abx = bx - ax;
-  const aby = by - ay;
+  const abx = bx - ax, aby = by - ay;
   const lenSq = abx * abx + aby * aby;
   if (lenSq === 0) return Math.hypot(px - ax, py - ay);
-  let t = ((px - ax) * abx + (py - ay) * aby) / lenSq;
-  t = Math.max(0, Math.min(1, t));
+  const t = Math.max(0, Math.min(1, ((px - ax) * abx + (py - ay) * aby) / lenSq));
   return Math.hypot(px - (ax + t * abx), py - (ay + t * aby));
 }
  
 function checkProjectileHits() {
   const now = Date.now();
- 
   for (const shooterId in players) {
     const projectiles = players[shooterId].projectiles || [];
  
@@ -108,15 +140,15 @@ function checkProjectileHits() {
         if (victim.inMenu) continue;
         if (now < (victim.invincibleUntil || 0)) continue;
  
-        const hitKey = `${shooterId}:${projectile.id}:${victimId}`;
+        const hitKey = `${shooterId}:${proj.id}:${victimId}`;
         if (processedHits.has(hitKey)) continue;
  
         const prevX = projectile.x - projectile.vx;
         const prevY = projectile.y - projectile.vy;
         const xyDist = pointToSegmentDist(
           victim.x, victim.y,
-          prevX, prevY,
-          projectile.x, projectile.y
+          proj.x - proj.vx, proj.y - proj.vy,
+          proj.x, proj.y
         );
         const zDistance = Math.abs((projectile.z || 0) - (victim.z || 0));
  
@@ -144,12 +176,20 @@ function checkProjectileHits() {
   for (const key of stale) processedHits.delete(key);
 }
  
-// ── Connection handler ────────────────────────────────────────────────────────
+// ── WebSocket keepalive (prevents Render proxy from dropping idle connections) ─
+setInterval(() => {
+  wss.clients.forEach((ws) => {
+    if (ws.isAlive === false) { ws.terminate(); return; }
+    ws.isAlive = false;
+    ws.ping();
+  });
+}, 30_000);
  
+// ── Connection handler ────────────────────────────────────────────────────────
 wss.on("connection", (ws) => {
   const id = Math.random().toString(36).slice(2);
-  ws.id = id;
-  ws.username = "Anonymous";
+  ws.id      = id;
+  ws.isAlive = true;
  
   players[id] = {
     x:               SPAWN.x,
@@ -171,7 +211,6 @@ wss.on("connection", (ws) => {
     console.error(`WebSocket error for player ${id}:`, err.message);
   });
  
-  ws.on("message", (msg) => {
     let data;
     try {
       data = JSON.parse(msg);
@@ -200,15 +239,16 @@ wss.on("connection", (ws) => {
       return;
     }
  
-    if (data.type === "setSprite") {
-      if (players[id]) players[id].sprite = String(data.sprite || "").slice(0, 2048);
-      return;
-    }
+      case "setName": {
+        const name = String(data.name || "Anonymous").trim().slice(0, 32) || "Anonymous";
+        if (players[id]) players[id].username = name;
+        break;
+      }
  
-    if (data.type === "menuOpen") {
-      if (players[id]) players[id].inMenu = true;
-      return;
-    }
+      case "setSprite": {
+        if (players[id]) players[id].sprite = String(data.sprite || "").slice(0, 2048);
+        break;
+      }
  
     if (data.type === "menuClosed") {
       if (players[id]) {
@@ -219,8 +259,6 @@ wss.on("connection", (ws) => {
         players[id].inMenu = false;
         broadcastPlayers();
       }
-      return;
-    }
  
     if (data.type === "respawn") {
       if (players[id]) {
@@ -234,8 +272,6 @@ wss.on("connection", (ws) => {
         players[id].z                = 0;
         broadcastPlayers();
       }
-      return;
-    }
  
     // ── Default: position / projectile update ────────────────────────────────
     if (!players[id]) return;
@@ -270,13 +306,41 @@ wss.on("connection", (ws) => {
         : prev.projectiles,
     };
  
-    checkProjectileHits();
-    broadcastPlayers();
+      default: {
+        // Position / projectile update
+        if (!players[id]) break;
+        const prev = players[id];
+        players[id] = {
+          ...prev,
+          x:        safeNum(data.x,     prev.x,     0, 200),
+          y:        safeNum(data.y,     prev.y,     0, 200),
+          angle:    safeNum(data.angle, prev.angle),
+          z:        safeNum(data.z,     prev.z,     0,  10),
+          sneaking: Boolean(data.sneaking),
+          // Server-authoritative fields never overwritten by client
+          health:          prev.health,
+          invincibleUntil: prev.invincibleUntil,
+          inMenu:          prev.inMenu,
+          username:        prev.username,
+          sprite:          prev.sprite,
+          projectiles: Array.isArray(data.projectiles)
+            ? data.projectiles.slice(0, MAX_PROJECTILES_PER_PLAYER).filter(
+                (p) => p && typeof p === "object" && typeof p.id === "number" &&
+                       isFiniteNum(p.x) && isFiniteNum(p.y) &&
+                       isFiniteNum(p.vx) && isFiniteNum(p.vy)
+              )
+            : prev.projectiles,
+        };
+        checkProjectileHits();
+        markDirty();
+        break;
+      }
+    }
   });
  
   ws.on("close", () => {
     delete players[id];
-    broadcastPlayers();
+    broadcastPlayersNow();
   });
 });
  
