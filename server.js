@@ -29,18 +29,17 @@ const PORT = process.env.PORT || 3000;
 // a fast response from GET /
 app.use(express.static(path.join(__dirname), { index: "index.html" }));
  
-// Explicit health check — Render probes this to decide if the service is up
-app.get("/healthz", (_req, res) => res.sendStatus(200));
- 
-// ── Shared constants (keep in sync with script_files/constant.js) ─────────────
-const HIT_DAMAGE               = 0.1;
-const PLAYER_RADIUS            = 0.2;
-const PROJECTILE_RADIUS        = 0.05;
-const PROJECTILE_HIT_RADIUS    = PLAYER_RADIUS + PROJECTILE_RADIUS;   // 0.25
-const PROJECTILE_HIT_RADIUS_Z  = PLAYER_RADIUS + PROJECTILE_RADIUS;
-const MAX_HEALTH               = 1;
+// ── Shared constants (must be kept in sync with script_files/constant.js) ───
+const HIT_DAMAGE = 0.1;
+const PLAYER_RADIUS = 0.2;
+const PROJECTILE_RADIUS = 0.05;
+const PROJECTILE_HIT_RADIUS = PLAYER_RADIUS + PROJECTILE_RADIUS; // 0.25
+const PROJECTILE_HIT_RADIUS_Z = PLAYER_RADIUS + PROJECTILE_RADIUS;
+const MAX_HEALTH = 1;
 const MAX_PROJECTILES_PER_PLAYER = 20;
-const SPAWN_INVINCIBILITY_MS   = 3000;
+// ────────────────────────────────────────────────────────────────────────────
+ 
+const SPAWN_INVINCIBILITY_MS = 3000; // 3 real seconds
  
 const SPAWN = { x: 3, y: 17, angle: 0 };
  
@@ -66,13 +65,12 @@ function safeNum(v, fallback, min = -Infinity, max = Infinity) {
   return isFiniteNum(v) ? Math.min(max, Math.max(min, v)) : fallback;
 }
  
-function _doBroadcastPlayers() {
-  if (wss.clients.size === 0) return;
+function broadcastPlayers() {
   const now = Date.now();
-  const out  = {};
+  const cleanedPlayers = {};
   for (const id in players) {
     const p = players[id];
-    out[id] = {
+    cleanedPlayers[id] = {
       x:            p.x,
       y:            p.y,
       angle:        p.angle,
@@ -82,6 +80,7 @@ function _doBroadcastPlayers() {
       health:       p.health,
       sprite:       p.sprite,
       sneaking:     p.sneaking,
+      // Derived state fields — used by the client for hitbox border color
       isDead:       p.health <= 0,
       isInvincible: now < (p.invincibleUntil || 0),
     };
@@ -106,6 +105,13 @@ function broadcastAll(obj) {
   });
 }
  
+function broadcastChatImage(name, imageData) {
+  const data = JSON.stringify({ type: "chatImage", name, imageData });
+  wss.clients.forEach((c) => {
+    if (c.readyState === WebSocket.OPEN) c.send(data);
+  });
+}
+ 
 function pointToSegmentDist(px, py, ax, ay, bx, by) {
   const abx = bx - ax, aby = by - ay;
   const lenSq = abx * abx + aby * aby;
@@ -117,27 +123,36 @@ function pointToSegmentDist(px, py, ax, ay, bx, by) {
 function checkProjectileHits() {
   const now = Date.now();
   for (const shooterId in players) {
-    for (const proj of players[shooterId].projectiles || []) {
-      if (!isFiniteNum(proj.x) || !isFiniteNum(proj.y) ||
-          !isFiniteNum(proj.vx) || !isFiniteNum(proj.vy)) continue;
+    const projectiles = players[shooterId].projectiles || [];
+ 
+    for (const projectile of projectiles) {
+      if (
+        !isFiniteNum(projectile.x)  ||
+        !isFiniteNum(projectile.y)  ||
+        !isFiniteNum(projectile.vx) ||
+        !isFiniteNum(projectile.vy)
+      ) continue;
  
       for (const victimId in players) {
         if (victimId === shooterId) continue;
         const victim = players[victimId];
-        if (victim.health <= 0 || victim.inMenu) continue;
+        if (victim.health <= 0) continue;
+        if (victim.inMenu) continue;
         if (now < (victim.invincibleUntil || 0)) continue;
  
         const hitKey = `${shooterId}:${proj.id}:${victimId}`;
         if (processedHits.has(hitKey)) continue;
  
+        const prevX = projectile.x - projectile.vx;
+        const prevY = projectile.y - projectile.vy;
         const xyDist = pointToSegmentDist(
           victim.x, victim.y,
           proj.x - proj.vx, proj.y - proj.vy,
           proj.x, proj.y
         );
-        const zDist = Math.abs((proj.z || 0) - (victim.z || 0));
+        const zDistance = Math.abs((projectile.z || 0) - (victim.z || 0));
  
-        if (xyDist <= PROJECTILE_HIT_RADIUS && zDist <= PROJECTILE_HIT_RADIUS_Z) {
+        if (xyDist <= PROJECTILE_HIT_RADIUS && zDistance <= PROJECTILE_HIT_RADIUS_Z) {
           victim.health = Math.max(0, Number((victim.health - HIT_DAMAGE).toFixed(3)));
           processedHits.add(hitKey);
         }
@@ -145,15 +160,20 @@ function checkProjectileHits() {
     }
   }
  
-  // Purge stale hit keys
-  const active = new Set();
-  for (const sid in players)
-    for (const p of players[sid].projectiles || [])
-      for (const vid in players)
-        active.add(`${sid}:${p.id}:${vid}`);
- 
-  for (const key of [...processedHits])
-    if (!active.has(key)) processedHits.delete(key);
+  // Clean up stale hit keys
+  const activeKeys = new Set();
+  for (const shooterId in players) {
+    for (const p of players[shooterId].projectiles || []) {
+      for (const victimId in players) {
+        activeKeys.add(`${shooterId}:${p.id}:${victimId}`);
+      }
+    }
+  }
+  const stale = [];
+  for (const key of processedHits) {
+    if (!activeKeys.has(key)) stale.push(key);
+  }
+  for (const key of stale) processedHits.delete(key);
 }
  
 // ── WebSocket keepalive (prevents Render proxy from dropping idle connections) ─
@@ -172,41 +192,52 @@ wss.on("connection", (ws) => {
   ws.isAlive = true;
  
   players[id] = {
-    x: SPAWN.x, y: SPAWN.y, angle: SPAWN.angle, z: 0,
-    username:        "Anonymous",
+    x:               SPAWN.x,
+    y:               SPAWN.y,
+    angle:           SPAWN.angle,
+    z:               0,
+    username:        ws.username,
     projectiles:     [],
     health:          MAX_HEALTH,
     sprite:          "/images/sprite1.png",
     invincibleUntil: 0,
-    inMenu:          true,
+    inMenu:          true,  // in sprite-select until confirmed
     sneaking:        false,
   };
  
   ws.send(JSON.stringify({ type: "init", id }));
  
-  ws.on("pong",  () => { ws.isAlive = true; });
-  ws.on("error", (err) => console.error(`WS error [${id}]:`, err.message));
- 
-  ws.on("message", (raw) => {
-    if (raw.length > 2_100_000) return; // block oversized payloads
+  ws.on("error", (err) => {
+    console.error(`WebSocket error for player ${id}:`, err.message);
+  });
  
     let data;
-    try { data = JSON.parse(raw); } catch { return; }
+    try {
+      data = JSON.parse(msg);
+    } catch {
+      return;
+    }
  
-    switch (data.type) {
+    if (data.type === "chat") {
+      const message = String(data.message || "").trim().slice(0, 300);
+      if (message) broadcastChat(ws.username, message);
+      return;
+    }
  
-      case "chat": {
-        const msg = String(data.message || "").trim().slice(0, 300);
-        if (msg) broadcastAll({ type: "chat", name: players[id]?.username ?? "Anonymous", message: msg });
-        break;
+    if (data.type === "chatImage") {
+      // imageData is a base64 data URL — cap size to ~2 MB to prevent abuse
+      const imageData = String(data.imageData || "");
+      if (imageData.startsWith("data:image/") && imageData.length < 2_000_000) {
+        broadcastChatImage(ws.username, imageData);
       }
+      return;
+    }
  
-      case "chatImage": {
-        const img = String(data.imageData || "");
-        if (img.startsWith("data:image/") && img.length < 2_000_000)
-          broadcastAll({ type: "chatImage", name: players[id]?.username ?? "Anonymous", imageData: img });
-        break;
-      }
+    if (data.type === "setName") {
+      ws.username = String(data.name || "Anonymous").trim().slice(0, 32) || "Anonymous";
+      if (players[id]) players[id].username = ws.username;
+      return;
+    }
  
       case "setName": {
         const name = String(data.name || "Anonymous").trim().slice(0, 32) || "Anonymous";
@@ -219,34 +250,61 @@ wss.on("connection", (ws) => {
         break;
       }
  
-      case "menuOpen": {
-        if (players[id]) players[id].inMenu = true;
-        break;
+    if (data.type === "menuClosed") {
+      if (players[id]) {
+        if (players[id].inMenu) {
+          players[id].health = MAX_HEALTH;
+          players[id].invincibleUntil = Date.now() + SPAWN_INVINCIBILITY_MS;
+        }
+        players[id].inMenu = false;
+        broadcastPlayers();
       }
  
-      case "menuClosed": {
-        if (players[id]) {
-          if (players[id].inMenu) {
-            players[id].health          = MAX_HEALTH;
-            players[id].invincibleUntil = Date.now() + SPAWN_INVINCIBILITY_MS;
-          }
-          players[id].inMenu = false;
-          broadcastPlayersNow();
-        }
-        break;
+    if (data.type === "respawn") {
+      if (players[id]) {
+        players[id].health          = MAX_HEALTH;
+        players[id].invincibleUntil  = Date.now() + SPAWN_INVINCIBILITY_MS;
+        players[id].inMenu           = false;
+        players[id].projectiles      = [];
+        players[id].x                = SPAWN.x;
+        players[id].y                = SPAWN.y;
+        players[id].angle            = SPAWN.angle;
+        players[id].z                = 0;
+        broadcastPlayers();
       }
  
-      case "respawn": {
-        if (players[id]) {
-          Object.assign(players[id], {
-            health: MAX_HEALTH, invincibleUntil: Date.now() + SPAWN_INVINCIBILITY_MS,
-            inMenu: false, projectiles: [],
-            x: SPAWN.x, y: SPAWN.y, angle: SPAWN.angle, z: 0,
-          });
-          broadcastPlayersNow();
-        }
-        break;
-      }
+    // ── Default: position / projectile update ────────────────────────────────
+    if (!players[id]) return;
+ 
+    const prev = players[id];
+    players[id] = {
+      ...prev,
+      x:        safeNum(data.x,     prev.x,     0, 200),
+      y:        safeNum(data.y,     prev.y,     0, 200),
+      angle:    safeNum(data.angle, prev.angle),
+      z:        safeNum(data.z,     prev.z,     0,  10),
+      sneaking: Boolean(data.sneaking),
+      // Server-authoritative — never overwritten by client
+      health:          prev.health,
+      invincibleUntil: prev.invincibleUntil,
+      inMenu:          prev.inMenu,
+      username:        prev.username,
+      sprite:          prev.sprite,
+      projectiles: Array.isArray(data.projectiles)
+        ? data.projectiles
+            .slice(0, MAX_PROJECTILES_PER_PLAYER)
+            .filter(
+              (p) =>
+                p !== null &&
+                typeof p === "object" &&
+                typeof p.id === "number" &&
+                isFiniteNum(p.x)  &&
+                isFiniteNum(p.y)  &&
+                isFiniteNum(p.vx) &&
+                isFiniteNum(p.vy)
+            )
+        : prev.projectiles,
+    };
  
       default: {
         // Position / projectile update
@@ -286,11 +344,4 @@ wss.on("connection", (ws) => {
   });
 });
  
-// ── Process-level safety net ──────────────────────────────────────────────────
-process.on("uncaughtException",  (e) => console.error("Uncaught:", e));
-process.on("unhandledRejection", (e) => console.error("Unhandled:", e));
- 
-// Bind explicitly to 0.0.0.0 — required on some cloud platforms
-server.listen(PORT, "0.0.0.0", () => {
-  console.log(`Server running on port ${PORT}`);
-});
+server.listen(PORT, () => console.log(`Server running on port ${PORT}`));

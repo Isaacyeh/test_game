@@ -28,9 +28,6 @@ const confirmCustomization  = document.getElementById("confirmCustomization");
 const settingsMenuLink      = document.getElementById("settingsMenuLink");
 const settingsOverlay       = document.getElementById("settingsOverlay");
 const closeSettings         = document.getElementById("closeSettings");
-const chat                  = document.getElementById("chat");
-const chatInput             = document.getElementById("chatInput");
-const sendBtn               = document.getElementById("sendBtn");
  
 // ── Crosshair state ───────────────────────────────────────────────────────────
 let pendingCrosshairImage   = "";
@@ -56,17 +53,21 @@ function clearInputState() {
 function isCustomizationOpen() {
   return !customizationOverlay.classList.contains("hidden");
 }
+ 
 function isSettingsOpen() {
   return !settingsOverlay.classList.contains("hidden");
 }
+ 
+// Only overlay menus (not the hamburger nav) pause the game
 function isAnyMenuOpen() {
   return isCustomizationOpen() || isSettingsOpen();
 }
+ 
 function syncMenuControlState() {
   setMenuOpen(isAnyMenuOpen());
 }
  
-// ── Mouse / keyboard ──────────────────────────────────────────────────────────
+// ── Mouse / keyboard guards ───────────────────────────────────────────────────
 window.addEventListener("mousemove", (e) => {
   if (isAnyMenuOpen()) { mouse.dx = 0; mouse.dy = 0; return; }
   if (document.pointerLockElement === canvas) {
@@ -77,6 +78,7 @@ window.addEventListener("mousemove", (e) => {
     mouse.x = e.clientX; mouse.y = e.clientY;
   }
 });
+ 
 window.addEventListener("keydown", (e) => {
   if (isAnyMenuOpen()) return;
   keys[e.key] = true;
@@ -94,6 +96,7 @@ window.addEventListener("mouseup", (e) => {
   mouse.buttons[e.button] = false;
 });
  
+// Pointer lock
 canvas.addEventListener("click", () => {
   if (isAnyMenuOpen()) return;
   canvas.requestPointerLock();
@@ -118,12 +121,14 @@ function closeCustomizationOverlay() {
 }
  
 customizationMenuLink.addEventListener("click", (e) => {
-  e.preventDefault(); e.stopPropagation();
+  e.preventDefault();
+  e.stopPropagation();
   menu.classList.add("hidden");
   openCustomizationOverlay();
 });
 closeCustomization.addEventListener("click", closeCustomizationOverlay);
 closeCustomization.addEventListener("pointerdown", (e) => e.preventDefault());
+ 
 customizationOverlay.addEventListener("click", (e) => {
   if (e.target === customizationOverlay) closeCustomizationOverlay();
 });
@@ -133,7 +138,10 @@ crosshairOpacityInput.addEventListener("input", (e) => {
 crosshairImageInput.addEventListener("change", (e) => {
   const file = e.target.files && e.target.files[0];
   if (!file) return;
-  if (pendingCrosshairBlobUrl) { URL.revokeObjectURL(pendingCrosshairBlobUrl); pendingCrosshairBlobUrl = null; }
+  if (pendingCrosshairBlobUrl) {
+    URL.revokeObjectURL(pendingCrosshairBlobUrl);
+    pendingCrosshairBlobUrl = null;
+  }
   pendingCrosshairBlobUrl = URL.createObjectURL(file);
   pendingCrosshairImage   = pendingCrosshairBlobUrl;
 });
@@ -148,7 +156,7 @@ confirmCustomization.addEventListener("click", () => {
   closeCustomizationOverlay();
 });
  
-// ── Settings overlay ──────────────────────────────────────────────────────────
+// ── Settings overlay (debug toggles) ─────────────────────────────────────────
 function openSettingsOverlay() {
   settingsOverlay.classList.remove("hidden");
   settingsOverlay.setAttribute("aria-hidden", "false");
@@ -156,6 +164,7 @@ function openSettingsOverlay() {
   clearInputState();
   if (document.pointerLockElement === canvas) document.exitPointerLock();
 }
+ 
 function closeSettingsOverlay() {
   settingsOverlay.classList.add("hidden");
   settingsOverlay.setAttribute("aria-hidden", "true");
@@ -164,111 +173,53 @@ function closeSettingsOverlay() {
 }
  
 settingsMenuLink.addEventListener("click", (e) => {
-  e.preventDefault(); e.stopPropagation();
+  e.preventDefault();
+  e.stopPropagation();
   menu.classList.add("hidden");
   openSettingsOverlay();
 });
+ 
 closeSettings.addEventListener("click", closeSettingsOverlay);
 closeSettings.addEventListener("pointerdown", (e) => e.preventDefault());
+ 
 settingsOverlay.addEventListener("click", (e) => {
   if (e.target === settingsOverlay) closeSettingsOverlay();
 });
  
+// Wire each checkbox to its debugToggles entry
 document.querySelectorAll("[data-debug-key]").forEach((checkbox) => {
   const key = checkbox.dataset.debugKey;
   if (!debugToggles[key]) return;
+  // Initialise checkbox from current toggle state
   checkbox.checked = debugToggles[key].enabled;
   checkbox.addEventListener("change", () => {
     debugToggles[key].enabled = checkbox.checked;
   });
 });
  
-// ── WebSocket with auto-reconnect ─────────────────────────────────────────────
-// Render free tier cold-starts in 30-50 seconds. Without reconnect, the WS
-// attempt fails immediately on first load and the game runs single-player
-// silently. This loop retries with exponential backoff until it connects.
+// ── WebSocket + game init ─────────────────────────────────────────────────────
+const chat      = document.getElementById("chat");
+const chatInput = document.getElementById("chatInput");
+const sendBtn   = document.getElementById("sendBtn");
  
 const wsProtocol = location.protocol === "https:" ? "wss://" : "ws://";
-let ws = null;
-let chatSetup = false;
-let playerSetup = false;
-let spriteMenuShown = false;
+const ws = new WebSocket(wsProtocol + location.host);
  
-// Show a status message in the chat panel so the player knows what's happening
-function showStatus(msg) {
-  const div = document.createElement("div");
-  div.style.color = "#aaa";
-  div.style.fontStyle = "italic";
-  div.textContent = msg;
-  chat.appendChild(div);
-  chat.scrollTop = chat.scrollHeight;
-}
+const { username } = getState();
+setupChat(ws, chatInput, chat, sendBtn, username);
+initPlayer(keys, ws, mouse);
  
-function connectWebSocket(attempt = 1) {
-  const MAX_DELAY_MS = 10_000;
-  const delay = Math.min(1000 * Math.pow(1.5, attempt - 1), MAX_DELAY_MS);
- 
-  if (attempt > 1) {
-    showStatus(`Connecting to server... (attempt ${attempt})`);
+showSpriteMenu(() => {
+  if (ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: "setSprite", sprite: getState().sprite }));
+    ws.send(JSON.stringify({ type: "menuClosed" }));
   }
  
-  ws = new WebSocket(wsProtocol + location.host);
- 
-  ws.addEventListener("open", () => {
-    showStatus("Connected!");
- 
-    // Only set up chat and player once — they hold a reference to ws
-    // internally via closure so we pass the live ws object each time.
-    if (!chatSetup) {
-      const { username } = getState();
-      setupChat(ws, chatInput, chat, sendBtn, username);
-      chatSetup = true;
-    }
- 
-    if (!playerSetup) {
-      initPlayer(keys, ws, mouse);
-      playerSetup = true;
-    }
- 
-    // Show sprite menu only on first successful connection
-    if (!spriteMenuShown) {
-      spriteMenuShown = true;
-      showSpriteMenu(() => {
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: "setSprite", sprite: getState().sprite }));
-          ws.send(JSON.stringify({ type: "menuClosed" }));
-        }
-      });
-    } else {
-      // Reconnecting after a drop — re-announce ourselves
-      const state = getState();
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: "setName",   name:   state.username }));
-        ws.send(JSON.stringify({ type: "setSprite", sprite: state.sprite }));
-        ws.send(JSON.stringify({ type: "menuClosed" }));
-      }
-    }
-  });
- 
-  ws.addEventListener("message", (e) => {
-    const data = JSON.parse(e.data);
-    if (data.type === "init")    setMyId(data.id);
-    if (data.type === "players") setOthers(data.players);
-  });
- 
-  ws.addEventListener("close", () => {
-    showStatus("Disconnected — retrying...");
-    // Exponential backoff reconnect
-    setTimeout(() => connectWebSocket(attempt + 1), delay);
-  });
- 
-  ws.addEventListener("error", () => {
-    // 'error' is always followed by 'close', so we just let the close handler retry.
-    // Don't show an extra message here or the chat fills up with duplicate errors.
-  });
-}
- 
-connectWebSocket();
+ws.addEventListener("message", (e) => {
+  const data = JSON.parse(e.data);
+  if (data.type === "init")    setMyId(data.id);
+  if (data.type === "players") setOthers(data.players);
+});
  
 // ── Game loop ─────────────────────────────────────────────────────────────────
 function loop() {
@@ -279,4 +230,3 @@ function loop() {
 }
  
 loop();
- 
