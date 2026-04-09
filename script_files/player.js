@@ -13,6 +13,7 @@ import {
   SPAWN_INVINCIBILITY_DURATION,
 } from "./constant.js";
 import { isWall } from "./map.js";
+import { debugLog } from "./debug.js";
  
 const SPAWN = { x: 3, y: 17, angle: 0, sneaking: false };
  
@@ -22,8 +23,8 @@ const state = {
   zVel: 0,
   onGround: true,
   isChatting: false,
-  isMenuOpen: false,  // unified flag used by blockControls
-  inMenu: false,      // server-facing flag (sent via WebSocket)
+  isMenuOpen: false,
+  inMenu: false,
   others: {},
   myId: null,
   projectiles: [],
@@ -47,21 +48,6 @@ let wasQPressed = false;
 let wasMousePressed = false;
 let nextProjectileId = 1;
 let COOLDOWN = 10;
-const processedHits = new Set();
- 
-function debugLog(msg) {
-  /*
-  const chat = document.getElementById("chat");
-  if (!chat) return;
-  const div = document.createElement("div");
-  div.style.color = "#ff0";
-  div.textContent = `[CLIENT] ${msg}`;
-  chat.appendChild(div);
-  chat.scrollTop = chat.scrollHeight;
-  */
-}
- 
-let hasEverSentProjectile = false;
  
 export function initPlayer(keys, ws, mouse) {
   keysRef = keys;
@@ -73,7 +59,6 @@ export function setIsChatting(value) {
   state.isChatting = value;
 }
  
-// Single unified setMenuOpen — sets both flags and notifies the server
 export function setMenuOpen(value) {
   const isOpen = Boolean(value);
   state.isMenuOpen = isOpen;
@@ -94,7 +79,7 @@ export function setMenuOpen(value) {
  
 export function setMyId(id) {
   state.myId = id;
-  debugLog(`My ID set: ${id}`);
+  debugLog("networkSend", `My ID set: ${id}`);
 }
  
 export function setOthers(nextOthers) {
@@ -144,6 +129,7 @@ export function respawn() {
   state.hasShot = false;
   state.cooldown = 0;
   state.projectiles = [];
+  debugLog("spawnInvincible", `Respawned — invincibility for ${SPAWN_INVINCIBILITY_DURATION} frames`);
   if (wsRef && wsRef.readyState === WebSocket.OPEN) {
     wsRef.send(JSON.stringify({ type: "respawn" }));
   }
@@ -164,12 +150,11 @@ function canMove(x, y) {
 export function update() {
   if (!keysRef || !wsRef || !mouseRef) return;
  
-  if (state.inMenu) {
-    return;
-  }
+  if (state.inMenu) return;
  
   if (state.invincibilityTimer > 0) {
     state.invincibilityTimer--;
+    debugLog("spawnInvincible", `Invincibility frames left: ${state.invincibilityTimer}`);
   }
  
   if (state.isDead) {
@@ -194,8 +179,6 @@ export function update() {
   }
  
   const { player } = state;
- 
-  // blockControls checks both isMenuOpen (overlay) and isChatting
   const blockControls = state.isChatting || state.isMenuOpen;
  
   if (!blockControls && keysRef.ArrowLeft) player.angle -= 0.04;
@@ -205,7 +188,7 @@ export function update() {
   let moveY = 0;
  
   state.player.sneaking = !blockControls && keysRef.Shift;
-  let sneakSpeed = state.player.sneaking ? 0.4 : 1;
+  const sneakSpeed = state.player.sneaking ? 0.4 : 1;
  
   if (!blockControls && (keysRef.w || keysRef.W)) {
     moveX += Math.cos(player.angle) * MOVE_SPEED * sneakSpeed;
@@ -234,6 +217,8 @@ export function update() {
     if (canMove(nx, player.y)) player.x = nx;
     if (canMove(player.x, ny)) player.y = ny;
   }
+ 
+  debugLog("playerMovement", `pos=(${player.x.toFixed(2)}, ${player.y.toFixed(2)}) angle=${player.angle.toFixed(2)}`);
  
   if (!blockControls && keysRef[" "] && state.onGround) {
     state.zVel = JUMP_VELOCITY;
@@ -276,9 +261,7 @@ export function update() {
       vy: Math.sin(player.angle) * PROJECTILE_SPEED,
       ttl: PROJECTILE_LIFETIME,
     });
-    debugLog(
-      `FIRED id=${pid} from (${player.x.toFixed(2)},${player.y.toFixed(2)}) vx=${Math.cos(player.angle).toFixed(2)} vy=${Math.sin(player.angle).toFixed(2)}`
-    );
+    debugLog("projectileFire", `FIRED id=${pid} from (${player.x.toFixed(2)},${player.y.toFixed(2)}) vx=${Math.cos(player.angle).toFixed(2)} vy=${Math.sin(player.angle).toFixed(2)}`);
   }
  
   wasQPressed = qPressed;
@@ -313,14 +296,7 @@ export function update() {
       health: state.health,
       sneaking: state.player.sneaking,
     };
- 
-    if (state.projectiles.length > 0 && !hasEverSentProjectile) {
-      hasEverSentProjectile = true;
-      debugLog(
-        `FIRST SEND WITH PROJECTILES: count=${state.projectiles.length} ids=${state.projectiles.map((p) => p.id).join(",")}`
-      );
-    }
- 
+    debugLog("networkSend", `send pos=(${player.x.toFixed(2)},${player.y.toFixed(2)}) proj=${state.projectiles.length}`);
     wsRef.send(JSON.stringify(payload));
   }
 }
