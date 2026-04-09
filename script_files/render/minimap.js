@@ -1,13 +1,13 @@
 import { MINIMAP_SCALE, MINIMAP_PADDING } from "../constant.js";
 import { map, mapStr } from "../map.js";
 import { getState } from "../player.js";
-
+ 
 export function drawMinimap(ctx) {
   const { player, others, myId } = getState();
   const VIEW_RADIUS = 12;
   const startX = MINIMAP_PADDING;
   const startY = MINIMAP_PADDING;
-
+ 
   ctx.fillStyle = "rgba(0,0,0,0.6)";
   ctx.fillRect(
     startX - 4,
@@ -15,12 +15,12 @@ export function drawMinimap(ctx) {
     VIEW_RADIUS * 2 * MINIMAP_SCALE + 8,
     VIEW_RADIUS * 2 * MINIMAP_SCALE + 8
   );
-
+ 
   const centerX = Math.floor(player.x);
   const centerY = Math.floor(player.y);
   const fracX = player.x - centerX;
   const fracY = player.y - centerY;
-
+ 
   for (let y = -VIEW_RADIUS; y < VIEW_RADIUS; y++) {
     for (let x = -VIEW_RADIUS; x < VIEW_RADIUS; x++) {
       const mapX = centerX + x;
@@ -36,7 +36,7 @@ export function drawMinimap(ctx) {
       }
     }
   }
-
+ 
   for (const id in others) {
     if (id === myId) continue;
     const p = others[id];
@@ -55,7 +55,9 @@ export function drawMinimap(ctx) {
     );
     ctx.fill();
   }
-
+ 
+  // Local player dot — half opaque when sneaking
+  ctx.globalAlpha = player.sneaking ? 0.4 : 1.0;
   ctx.fillStyle = "lime";
   ctx.beginPath();
   ctx.arc(
@@ -66,8 +68,8 @@ export function drawMinimap(ctx) {
     Math.PI * 2
   );
   ctx.fill();
-
-  // Direction
+ 
+  // Direction indicator
   ctx.strokeStyle = "lime";
   ctx.lineWidth = 2;
   ctx.beginPath();
@@ -80,4 +82,6 @@ export function drawMinimap(ctx) {
     startY + (VIEW_RADIUS + Math.sin(player.angle) * 0.8) * MINIMAP_SCALE
   );
   ctx.stroke();
+  ctx.globalAlpha = 1.0;
 }
+ 
