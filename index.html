@@ -3,13 +3,10 @@
   <head>
     <title>Web Doom-like</title>
     <!--
-      loader.js must be a plain (non-module) script so it runs synchronously
-      before any other JS and before the page renders. It:
-        1. Injects a loading overlay immediately
-        2. Hides all game content until ready
-        3. Opens the WebSocket with retry/backoff
-        4. Checks that CSS loaded correctly
-        5. Resolves window.__gameWsPromise for script.js to consume
+      loader.js runs synchronously before the browser paints anything.
+      It injects the loading overlay and exposes window.__loader.
+      It must come before the stylesheet so the overlay appears
+      even if CSS fails to load.
     -->
     <script src="loader.js"></script>
     <link rel="stylesheet" href="style.css" />
