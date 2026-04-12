@@ -5,7 +5,7 @@ import {
   setMyId,
   setOthers,
   setMenuOpen,
-  promptUsername,        // ← new: replaces the inline prompt() in player.js
+  promptUsername,
 } from "./script_files/player.js";
 import { setupChat } from "./script_files/chat.js";
 import { render } from "./script_files/render/render.js";
@@ -59,7 +59,6 @@ function isSettingsOpen() {
   return !settingsOverlay.classList.contains("hidden");
 }
  
-// Only overlay menus (not the hamburger nav) pause the game
 function isAnyMenuOpen() {
   return isCustomizationOpen() || isSettingsOpen();
 }
@@ -97,7 +96,6 @@ window.addEventListener("mouseup", (e) => {
   mouse.buttons[e.button] = false;
 });
  
-// Pointer lock
 canvas.addEventListener("click", () => {
   if (isAnyMenuOpen()) return;
   canvas.requestPointerLock();
@@ -187,7 +185,6 @@ settingsOverlay.addEventListener("click", (e) => {
   if (e.target === settingsOverlay) closeSettingsOverlay();
 });
  
-// Wire each checkbox to its debugToggles entry
 document.querySelectorAll("[data-debug-key]").forEach((checkbox) => {
   const key = checkbox.dataset.debugKey;
   if (!debugToggles[key]) return;
@@ -209,6 +206,9 @@ const loader = window.__loader || {
   showError: (_m, retry) => setTimeout(retry, 3000),
   dismiss: () => {},
 };
+ 
+// How long loader.js takes to fade out (matches the CSS transition in loader.js)
+const LOADER_FADE_MS = 550;
  
 const WS_MAX_RETRIES   = 10;
 const WS_RETRY_BASE_MS = 1500;
@@ -235,15 +235,10 @@ function connectWebSocket() {
     clearTimeout(openTimer);
     gameStarted = true;
     retryCount  = 0;
-    loader.setProgress(90, "Connected — loading game...");
+    loader.setProgress(100, "Ready!");
  
-    // ── Username prompt fires here, after the loader confirms the connection.
-    // The loader overlay is still visible at this point, so the browser's
-    // prompt() dialog appears on top of the loader — never on a blank/flashing page.
-    const username = promptUsername();
- 
-    // ── Everything below is identical to the original script.js ──────────
-    setupChat(ws, chatInput, chat, sendBtn, username);
+    // Start the game loop immediately so the canvas is live while the
+    // loader fades and before the username prompt appears.
     initPlayer(keys, ws, mouse);
  
     ws.addEventListener("message", (e) => {
@@ -252,7 +247,6 @@ function connectWebSocket() {
       if (data.type === "players") setOthers(data.players);
     });
  
-    // ── Game loop ─────────────────────────────────────────────────────────
     function loop() {
       syncMenuControlState();
       update();
@@ -261,18 +255,28 @@ function connectWebSocket() {
     }
     loop();
  
-    // ── Sprite menu (shown on top, doesn't block the loop) ────────────────
-    showSpriteMenu(() => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: "setSprite", sprite: getState().sprite }));
-        ws.send(JSON.stringify({ type: "menuClosed" }));
-      }
-    });
+    // Dismiss the loader, then wait for its fade-out to finish before
+    // showing the username prompt. This guarantees the dialog never
+    // appears while the loading screen is still visible.
+    loader.dismiss();
+    setTimeout(() => {
+      const username = promptUsername();
  
-    // Dismiss loading screen now that the game loop is running and the
-    // sprite menu is about to appear.
-    loader.setProgress(100, "Ready!");
-    setTimeout(() => loader.dismiss(), 300);
+      setupChat(ws, chatInput, chat, sendBtn, username);
+ 
+      // Tell the server our name + sprite right away.
+      const { sprite } = getState();
+      ws.send(JSON.stringify({ type: "setName",   name: username }));
+      ws.send(JSON.stringify({ type: "setSprite", sprite }));
+ 
+      // Show sprite selection menu, then signal the server we're in-game.
+      showSpriteMenu(() => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: "setSprite", sprite: getState().sprite }));
+          ws.send(JSON.stringify({ type: "menuClosed" }));
+        }
+      });
+    }, LOADER_FADE_MS);
   });
  
   ws.addEventListener("error", () => {
