@@ -3,14 +3,14 @@ body {
   background: black;
   font-family: Arial, sans-serif;
 }
-
+ 
 canvas {
   border: 2px solid #444;
   display: block;
   margin: 0 auto;
 }
-
-/* Chat styling */
+ 
+/* ── Chat ─────────────────────────────────────────────────────────────────── */
 #chatContainer {
   position: fixed;
   bottom: 10px;
@@ -24,75 +24,116 @@ canvas {
   color: white;
   font-family: monospace;
   font-size: 14px;
-  z-index: 1000; /* above canvas */
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
 }
-
+ 
 #chat {
   max-height: 150px;
   overflow-y: auto;
   margin-bottom: 5px;
+  flex: 1;
 }
-
+ 
+/* Input row — stretches input, squishes buttons */
+#chatContainer > input,
+#chatContainer > button,
+#chatContainer > label {
+  flex-shrink: 0;
+}
+ 
 #chatInput {
-  width: 65%;
+  width: 0;
+  flex: 1 1 0;
   padding: 4px;
+  min-width: 0;
+  box-sizing: border-box;
 }
-
+ 
+/* Wrap the bottom controls in a flex row */
+#chatContainer {
+  flex-wrap: nowrap;
+}
+ 
+/* Make the input row sit in a flex row */
+#chatInput,
 #sendBtn {
-  width: 25%;
-  padding: 4px;
+  display: inline-block;
 }
-
-/* menu styling */
+ 
+#sendBtn {
+  padding: 4px 6px;
+  flex-shrink: 0;
+}
+ 
+/* Override the default block layout so input + btn + label line up */
+#chatContainer {
+  display: flex;
+  flex-direction: column;
+}
+ 
+/* Wrap the bottom row elements in a div via JS is complex, so instead
+   we use a CSS trick: float the last child items into a row */
+#chatInput {
+  width: 55%;
+}
+ 
+#sendBtn {
+  width: 20%;
+}
+ 
+/* ── Menu ─────────────────────────────────────────────────────────────────── */
 .menu {
   position: absolute;
   top: 80px;
   background-image: linear-gradient(to right, black, lightslategray);
   border: 1px solid #ccc;
   padding: 10px;
+  z-index: 500;
 }
-
+ 
 .menu ul {
   list-style: none;
   margin: 0;
   padding: 0;
 }
-
+ 
 .menu li {
   margin: 10px 0;
 }
-
+ 
 .menu a {
   text-decoration: none;
   color: white;
   font-weight: bold;
-  font-size:28px;
+  font-size: 28px;
 }
-
+ 
 .hidden {
   display: none;
 }
-
+ 
 .menu li a:hover {
   text-decoration: line-through;
 }
-
+ 
 .menu li a:hover::before {
-  content: "<> "
+  content: "<> ";
 }
-
+ 
 .menu li a:hover::after {
   content: " <>";
 }
-
-
-.bars{
-  height:5px;
-  width:40px;
-  background:black;
-  transition:2s;
+ 
+.bars {
+  height: 5px;
+  width: 40px;
+  background: black;
+  transition: 2s;
 }
-#menu-button{
+ 
+#menu-button {
   position: absolute;
   top: 0;
   left: 0;
@@ -100,9 +141,9 @@ canvas {
   grid-template-columns: repeat(2, 20px);
   grid-template-rows: repeat(4, 4px);
   gap: 10px 10px;
-  margin:20px;
+  margin: 20px;
 }
-
+ 
 .title {
   background-color: lightslategray;
   padding: 5px;
@@ -110,14 +151,14 @@ canvas {
   font-family: Verdana;
   font-weight: bold;
 }
-
+ 
 .title h1 {
   text-align: center;
   font-size: 45px;
   margin: 10px 0;
 }
-
-/* Sprite menu styling */
+ 
+/* ── Sprite menu ──────────────────────────────────────────────────────────── */
 .sprite-menu {
   position: fixed;
   top: 50%;
@@ -133,20 +174,33 @@ canvas {
   color: white;
   border-radius: 10px;
 }
-
+ 
 .sprite-menu h2 {
   text-align: center;
   color: lightslategray;
   margin-top: 0;
 }
-
+ 
 #spriteGrid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
   gap: 10px;
   margin: 15px 0;
 }
-
+ 
+.sprite-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+ 
+.sprite-name {
+  font-size: 11px;
+  text-align: center;
+  margin: 4px 0 0;
+  color: #ccc;
+}
+ 
 .sprite-option {
   width: 80px;
   height: 80px;
@@ -155,29 +209,30 @@ canvas {
   cursor: pointer;
   transition: all 0.3s;
   border-radius: 5px;
+  object-fit: contain;
 }
-
+ 
 .sprite-option:hover {
   border-color: lightslategray;
   transform: scale(1.1);
 }
-
+ 
 .sprite-option.selected {
   border-color: lightslategray;
   box-shadow: 0 0 10px lightslategray;
   background-color: rgba(119, 136, 153, 0.3);
 }
-
+ 
 .sprite-menu label {
   display: block;
   margin: 10px 0 5px 0;
   color: lightslategray;
 }
-
+ 
 #customSprite {
   margin-bottom: 15px;
 }
-
+ 
 #confirmSprite {
   width: 100%;
   padding: 10px;
@@ -189,9 +244,12 @@ canvas {
   font-weight: bold;
   font-size: 16px;
 }
-
+ 
 #confirmSprite:hover {
   background-color: #8ca3b0;
+}
+ 
+/* ── Overlays (shared) ────────────────────────────────────────────────────── */
 .overlay {
   position: fixed;
   inset: 0;
@@ -201,21 +259,32 @@ canvas {
   align-items: center;
   justify-content: center;
 }
-
+ 
 .overlay.hidden {
   display: none;
 }
-
+ 
 .overlay-window {
   width: min(560px, 90vw);
-  background: rgba(28, 28, 28, 0.9);
+  background: rgba(28, 28, 28, 0.95);
   border: 1px solid #888;
   border-radius: 10px;
   color: #fff;
   padding: 18px 20px;
   position: relative;
 }
-
+ 
+.overlay-window h2 {
+  margin-top: 0;
+  color: lightslategray;
+}
+ 
+.overlay-subtitle {
+  font-size: 13px;
+  color: #aaa;
+  margin: -8px 0 16px;
+}
+ 
 .overlay-close {
   position: absolute;
   top: 10px;
@@ -226,14 +295,14 @@ canvas {
   font-size: 24px;
   cursor: pointer;
 }
-
+ 
 .field-group {
   margin-top: 14px;
   display: flex;
   flex-direction: column;
   gap: 7px;
 }
-
+ 
 .confirm-button {
   margin-top: 16px;
   border: 1px solid #bfbfbf;
@@ -243,4 +312,71 @@ canvas {
   border-radius: 6px;
   cursor: pointer;
   font-weight: 700;
+}
+ 
+.confirm-button:hover {
+  background: #444;
+}
+ 
+/* ── Settings toggle rows ─────────────────────────────────────────────────── */
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+ 
+.toggle-row:last-child {
+  border-bottom: none;
+}
+ 
+.toggle-label {
+  font-size: 15px;
+  color: #ddd;
+}
+ 
+/* Toggle switch */
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+ 
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+  position: absolute;
+}
+ 
+.toggle-thumb {
+  position: absolute;
+  inset: 0;
+  background: #555;
+  border-radius: 24px;
+  transition: background 0.2s;
+}
+ 
+.toggle-thumb::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  background: white;
+  border-radius: 50%;
+  transition: transform 0.2s;
+}
+ 
+.toggle-switch input:checked + .toggle-thumb {
+  background: lightslategray;
+}
+ 
+.toggle-switch input:checked + .toggle-thumb::after {
+  transform: translateX(20px);
 }

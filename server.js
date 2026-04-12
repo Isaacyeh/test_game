@@ -1,35 +1,61 @@
 const express = require("express");
 const http = require("http");
 const WebSocket = require("ws");
+const path = require("path");
 
 const app = express();
 const server = http.createServer(app);
-const wss = new WebSocket.Server({ server });
+const wss = new WebSocket.Server({ noServer: true });
+
+server.on("upgrade", (request, socket, head) => {
+  wss.handleUpgrade(request, socket, head, (ws) => {
+    wss.emit("connection", ws, request);
+  });
+});
 
 const PORT = process.env.PORT || 3000;
 
-app.use(express.static(__dirname));
+// Static files
+app.use(express.static(path.join(__dirname), { index: "index.html" }));
 
-// ── Shared constants (must be kept in sync with script_files/constant.js) ───
+// Constants
 const HIT_DAMAGE = 0.1;
-const PLAYER_RADIUS = 0.2; // physical half-width of a player
-const PROJECTILE_RADIUS = 0.05; // visual radius of the ball
-// A hit registers when the ball's edge touches the player's edge:
-// total = PLAYER_RADIUS + PROJECTILE_RADIUS
-const PROJECTILE_HIT_RADIUS = PLAYER_RADIUS + PROJECTILE_RADIUS; // 0.25
-const PROJECTILE_HIT_RADIUS_Z = PLAYER_RADIUS + PROJECTILE_RADIUS; // same idea vertically
+const PLAYER_RADIUS = 0.2;
+const PROJECTILE_RADIUS = 0.05;
+const PROJECTILE_HIT_RADIUS = PLAYER_RADIUS + PROJECTILE_RADIUS;
+const PROJECTILE_HIT_RADIUS_Z = PLAYER_RADIUS + PROJECTILE_RADIUS;
 const MAX_HEALTH = 1;
-// ────────────────────────────────────────────────────────────────────────────
-const SPAWN_INVINCIBILITY_DURATION = 180; // 3 seconds at 60fps
+const MAX_PROJECTILES_PER_PLAYER = 20;
 
+const SPAWN_INVINCIBILITY_MS = 3000;
 const SPAWN = { x: 3, y: 17, angle: 0 };
 
 const players = {};
 const processedHits = new Set();
 
-function broadcastPlayers() {
-  // Clean player data before broadcasting to remove server-only fields
+let broadcastDirty = false;
+
+// Broadcast loop
+setInterval(() => {
+  if (broadcastDirty) {
+    broadcastDirty = false;
+    _doBroadcastPlayers();
+  }
+}, 1000 / 20);
+
+// Helpers
+function isFiniteNum(v) {
+  return typeof v === "number" && Number.isFinite(v);
+}
+
+function safeNum(v, fallback, min = -Infinity, max = Infinity) {
+  return isFiniteNum(v) ? Math.min(max, Math.max(min, v)) : fallback;
+}
+
+function _doBroadcastPlayers() {
+  const now = Date.now();
   const cleanedPlayers = {};
+
   for (const id in players) {
     const p = players[id];
     cleanedPlayers[id] = {
@@ -42,128 +68,133 @@ function broadcastPlayers() {
       health: p.health,
       sprite: p.sprite,
       sneaking: p.sneaking,
+      isDead: p.health <= 0,
+      isInvincible: now < (p.invincibleUntil || 0),
     };
   }
-  const data = JSON.stringify({ type: "players", players: cleanedPlayers });
+
+  const msg = JSON.stringify({ type: "players", players: cleanedPlayers });
+
   wss.clients.forEach((c) => {
-    if (c.readyState === WebSocket.OPEN) c.send(data);
+    if (c.readyState === WebSocket.OPEN) {
+      try { c.send(msg); } catch {}
+    }
   });
+}
+
+function markDirty() {
+  broadcastDirty = true;
+}
+
+function broadcastPlayersNow() {
+  broadcastDirty = false;
+  _doBroadcastPlayers();
 }
 
 function broadcastChat(name, message) {
-  const data = JSON.stringify({ type: "chat", name, message });
+  broadcastAll({ type: "chat", name, message });
+}
+
+function broadcastAll(obj) {
+  const msg = JSON.stringify(obj);
   wss.clients.forEach((c) => {
-    if (c.readyState === WebSocket.OPEN) c.send(data);
+    if (c.readyState === WebSocket.OPEN) {
+      try { c.send(msg); } catch {}
+    }
   });
 }
 
-/**
- * Returns the minimum distance between point P and line segment AB.
- * Swept collision — checks the full path the projectile traveled this
- * frame, not just its tip, so fast projectiles can't tunnel through targets.
- */
+function broadcastChatImage(name, imageData) {
+  broadcastAll({ type: "chatImage", name, imageData });
+}
+
+// Collision
 function pointToSegmentDist(px, py, ax, ay, bx, by) {
-  const abx = bx - ax;
-  const aby = by - ay;
+  const abx = bx - ax, aby = by - ay;
   const lenSq = abx * abx + aby * aby;
   if (lenSq === 0) return Math.hypot(px - ax, py - ay);
-  let t = ((px - ax) * abx + (py - ay) * aby) / lenSq;
-  t = Math.max(0, Math.min(1, t));
+  const t = Math.max(0, Math.min(1, ((px - ax) * abx + (py - ay) * aby) / lenSq));
   return Math.hypot(px - (ax + t * abx), py - (ay + t * aby));
 }
 
 function checkProjectileHits() {
-  debugTick++;
-  const shouldLogMiss = debugTick % DEBUG_INTERVAL === 0;
-
-  let closestMiss = null;
-  let closestMissDist = Infinity;
-
-  // Decrement invincibility timers for all players
-  for (const playerId in players) {
-    if (players[playerId].invincibilityTimer > 0) {
-      players[playerId].invincibilityTimer--;
-    }
-  }
+  const now = Date.now();
 
   for (const shooterId in players) {
-    const shooter = players[shooterId];
-    const projectiles = shooter.projectiles || [];
+    const projectiles = players[shooterId].projectiles || [];
 
     for (const projectile of projectiles) {
+      if (
+        !isFiniteNum(projectile.x) ||
+        !isFiniteNum(projectile.y) ||
+        !isFiniteNum(projectile.vx) ||
+        !isFiniteNum(projectile.vy)
+      ) continue;
+
       for (const victimId in players) {
         if (victimId === shooterId) continue;
+
         const victim = players[victimId];
         if (victim.health <= 0) continue;
-
-        // Don't damage invincible players
-        if (victim.invincibilityTimer > 0 || victim.inMenu) {
-          continue;
-        }
+        if (victim.inMenu) continue;
+        if (now < (victim.invincibleUntil || 0)) continue;
 
         const hitKey = `${shooterId}:${projectile.id}:${victimId}`;
         if (processedHits.has(hitKey)) continue;
 
-        // Swept XY check
-        const prevX = projectile.x - (projectile.vx || 0);
-        const prevY = projectile.y - (projectile.vy || 0);
         const xyDist = pointToSegmentDist(
-          victim.x,
-          victim.y,
-          prevX,
-          prevY,
+          victim.x, victim.y,
+          projectile.x - projectile.vx,
+          projectile.y - projectile.vy,
           projectile.x,
           projectile.y
         );
 
         const zDistance = Math.abs((projectile.z || 0) - (victim.z || 0));
 
-        if (
-          xyDist <= PROJECTILE_HIT_RADIUS &&
-          zDistance <= PROJECTILE_HIT_RADIUS_Z
-        ) {
-          victim.health = Math.max(
-            0,
-            Number((victim.health - HIT_DAMAGE).toFixed(3))
-          );
+        if (xyDist <= PROJECTILE_HIT_RADIUS && zDistance <= PROJECTILE_HIT_RADIUS_Z) {
+          victim.health = Math.max(0, Number((victim.health - HIT_DAMAGE).toFixed(3)));
           processedHits.add(hitKey);
         }
       }
     }
   }
-
-  // Clean up hit keys for projectiles that no longer exist
-  const activeKeys = new Set();
-  for (const shooterId in players) {
-    for (const p of players[shooterId].projectiles || []) {
-      for (const victimId in players) {
-        activeKeys.add(`${shooterId}:${p.id}:${victimId}`);
-      }
-    }
-  }
-  for (const key of processedHits) {
-    if (!activeKeys.has(key)) processedHits.delete(key);
-  }
 }
 
+// Keepalive
+setInterval(() => {
+  wss.clients.forEach((ws) => {
+    if (ws.isAlive === false) return ws.terminate();
+    ws.isAlive = false;
+    ws.ping();
+  });
+}, 30000);
+
+// Connection
 wss.on("connection", (ws) => {
   const id = Math.random().toString(36).slice(2);
   ws.id = id;
-  ws.username = "Anonymous";
+  ws.isAlive = true;
+
   players[id] = {
     x: SPAWN.x,
     y: SPAWN.y,
     angle: SPAWN.angle,
     z: 0,
-    username: ws.username,
+    username: "Anonymous",
     projectiles: [],
     health: MAX_HEALTH,
-    sprite: "/images/sprite1.png", // Default sprite
-    invincibilityTimer: 0,
-    inMenu: false,
+    sprite: "/images/sprite1.png",
+    invincibleUntil: 0,
+    inMenu: true,
+    sneaking: false,
   };
 
   ws.send(JSON.stringify({ type: "init", id }));
+
+  ws.on("pong", () => {
+    ws.isAlive = true;
+  });
 
   ws.on("message", (msg) => {
     let data;
@@ -174,70 +205,90 @@ wss.on("connection", (ws) => {
     }
 
     if (data.type === "chat") {
-      broadcastChat(ws.username, data.message);
+      const message = String(data.message || "").trim().slice(0, 300);
+      if (message) broadcastChat(players[id].username, message);
       return;
     }
 
-    if (data.type === "respawn") {
-      if (players[id]) {
-        players[id].health = MAX_HEALTH;
-        players[id].invincibilityTimer = SPAWN_INVINCIBILITY_DURATION; // 3 seconds invincibility
-        players[id].inMenu = false;
-        players[id].projectiles = [];
-        players[id].x = SPAWN.x;
-        players[id].y = SPAWN.y;
-        players[id].angle = SPAWN.angle;
-        players[id].z = 0;
-        broadcastPlayers();
-      }
-      return;
-    }
-
-    if (data.type === "menuOpen") {
-      if (players[id]) {
-        players[id].inMenu = true;
-        broadcastDebug(`${ws.username} opened character select menu`);
-      }
-      return;
-    }
-
-    if (data.type === "menuClosed") {
-      if (players[id]) {
-        players[id].health = MAX_HEALTH;
-        players[id].inMenu = false;
-        broadcastDebug(`${ws.username} closed character select menu - health reset to ${MAX_HEALTH}`);
-        broadcastPlayers();
+    if (data.type === "chatImage") {
+      const imageData = String(data.imageData || "");
+      if (imageData.startsWith("data:image/") && imageData.length < 2_000_000) {
+        broadcastChatImage(players[id].username, imageData);
       }
       return;
     }
 
     if (data.type === "setName") {
-      ws.username = String(data.name || "Anonymous").trim() || "Anonymous";
-      if (players[id]) players[id].username = ws.username;
+      const name = String(data.name || "Anonymous").trim().slice(0, 32) || "Anonymous";
+      players[id].username = name;
       return;
     }
 
     if (data.type === "setSprite") {
-      if (players[id]) players[id].sprite = data.sprite;
-      broadcastDebug(`${ws.username} set sprite`);
+      players[id].sprite = String(data.sprite || "").slice(0, 2048);
       return;
     }
 
-    if (players[id]) {
-      const serverHealth = players[id].health;
-      const invincibilityTimer = players[id].invincibilityTimer;
-      const inMenu = players[id].inMenu;
-      const projectiles = data.projectiles || players[id].projectiles || [];
-      players[id] = { ...players[id], ...data, health: serverHealth, invincibilityTimer, inMenu, projectiles };
-      checkProjectileHits();
-      broadcastPlayers();
+    if (data.type === "menuClosed") {
+      if (players[id].inMenu) {
+        players[id].health = MAX_HEALTH;
+        players[id].invincibleUntil = Date.now() + SPAWN_INVINCIBILITY_MS;
+      }
+      players[id].inMenu = false;
+      broadcastPlayersNow();
+      return;
     }
+
+    if (data.type === "respawn") {
+      players[id] = {
+        ...players[id],
+        health: MAX_HEALTH,
+        invincibleUntil: Date.now() + SPAWN_INVINCIBILITY_MS,
+        inMenu: false,
+        projectiles: [],
+        x: SPAWN.x,
+        y: SPAWN.y,
+        angle: SPAWN.angle,
+        z: 0,
+      };
+      broadcastPlayersNow();
+      return;
+    }
+
+    // Default: movement update
+    const prev = players[id];
+
+    players[id] = {
+      ...prev,
+      x: safeNum(data.x, prev.x, 0, 200),
+      y: safeNum(data.y, prev.y, 0, 200),
+      angle: safeNum(data.angle, prev.angle),
+      z: safeNum(data.z, prev.z, 0, 10),
+      sneaking: Boolean(data.sneaking),
+      projectiles: Array.isArray(data.projectiles)
+        ? data.projectiles.slice(0, MAX_PROJECTILES_PER_PLAYER).filter(
+            (p) =>
+              p &&
+              typeof p === "object" &&
+              typeof p.id === "number" &&
+              isFiniteNum(p.x) &&
+              isFiniteNum(p.y) &&
+              isFiniteNum(p.vx) &&
+              isFiniteNum(p.vy)
+          )
+        : prev.projectiles,
+    };
+
+    checkProjectileHits();
+    markDirty();
   });
 
   ws.on("close", () => {
     delete players[id];
-    broadcastPlayers();
+    broadcastPlayersNow();
   });
 });
 
-server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+server.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
