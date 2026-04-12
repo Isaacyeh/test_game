@@ -204,11 +204,8 @@ const loader = window.__loader || {
   setProgress: () => {},
   setRetryInfo: () => {},
   showError: (_m, retry) => setTimeout(retry, 3000),
-  dismiss: () => {},
+  dismiss: (cb) => { if (typeof cb === "function") cb(); },
 };
- 
-// How long loader.js takes to fade out (matches the CSS transition in loader.js)
-const LOADER_FADE_MS = 550;
  
 const WS_MAX_RETRIES   = 10;
 const WS_RETRY_BASE_MS = 1500;
@@ -237,8 +234,8 @@ function connectWebSocket() {
     retryCount  = 0;
     loader.setProgress(100, "Ready!");
  
-    // Start the game loop immediately so the canvas is live while the
-    // loader fades and before the username prompt appears.
+    // Start the game loop now — it runs underneath the still-visible loader
+    // so the canvas is warm and ready the moment the overlay disappears.
     initPlayer(keys, ws, mouse);
  
     ws.addEventListener("message", (e) => {
@@ -255,28 +252,25 @@ function connectWebSocket() {
     }
     loop();
  
-    // Dismiss the loader, then wait for its fade-out to finish before
-    // showing the username prompt. This guarantees the dialog never
-    // appears while the loading screen is still visible.
-    loader.dismiss();
-    setTimeout(() => {
+    // dismiss() fades the loader out, keeps body.game-loading in place until
+    // the fade is done, then removes the overlay, reveals the page, and only
+    // THEN fires the callback — so the prompt appears on a clean game screen.
+    loader.dismiss(() => {
       const username = promptUsername();
  
       setupChat(ws, chatInput, chat, sendBtn, username);
  
-      // Tell the server our name + sprite right away.
       const { sprite } = getState();
       ws.send(JSON.stringify({ type: "setName",   name: username }));
       ws.send(JSON.stringify({ type: "setSprite", sprite }));
  
-      // Show sprite selection menu, then signal the server we're in-game.
       showSpriteMenu(() => {
         if (ws.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify({ type: "setSprite", sprite: getState().sprite }));
           ws.send(JSON.stringify({ type: "menuClosed" }));
         }
       });
-    }, LOADER_FADE_MS);
+    });
   });
  
   ws.addEventListener("error", () => {

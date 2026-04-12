@@ -4,6 +4,8 @@
 // and call dismiss() when the connection is confirmed open.
  
 (function () {
+  const FADE_MS = 500; // must match the CSS transition duration below
+ 
   const style = document.createElement("style");
   style.textContent = `
     #game-loader {
@@ -17,7 +19,7 @@
       justify-content: center;
       font-family: 'Courier New', monospace;
       color: #fff;
-      transition: opacity 0.5s ease;
+      transition: opacity ${FADE_MS}ms ease;
     }
     #game-loader.fade-out {
       opacity: 0;
@@ -113,6 +115,12 @@
       background: rgba(119,136,153,0.18);
       box-shadow: 0 0 10px rgba(119,136,153,0.35);
     }
+ 
+    /*
+     * While this class is on <body>, everything EXCEPT the loader is hidden.
+     * It is added immediately when the page loads and only removed AFTER the
+     * fade-out transition completes — so nothing underneath ever flashes.
+     */
     body.game-loading > *:not(#game-loader) {
       visibility: hidden;
     }
@@ -159,12 +167,32 @@
         onRetry();
       };
     },
-    dismiss: function() {
+ 
+    /**
+     * Fade the loader out, then call onComplete once it is fully gone
+     * and the page underneath is revealed. script.js uses this to show
+     * the username prompt only after the screen is completely clear.
+     */
+    dismiss: function(onComplete) {
       var l = gid("game-loader");
-      if (!l) return;
-      document.body.classList.remove("game-loading");
+      if (!l) {
+        // Loader was already removed — just reveal the page and call back.
+        document.body.classList.remove("game-loading");
+        if (typeof onComplete === "function") onComplete();
+        return;
+      }
+ 
+      // Start the CSS fade.
       l.classList.add("fade-out");
-      setTimeout(function() { if (l.parentNode) l.parentNode.removeChild(l); }, 550);
+ 
+      // After the transition finishes: remove the overlay, then reveal the
+      // page content, then fire the callback. Doing it in this order means
+      // the game canvas is never visible until the loader is fully gone.
+      setTimeout(function() {
+        if (l.parentNode) l.parentNode.removeChild(l);
+        document.body.classList.remove("game-loading"); // ← page becomes visible HERE
+        if (typeof onComplete === "function") onComplete();
+      }, FADE_MS);
     }
   };
 })();
