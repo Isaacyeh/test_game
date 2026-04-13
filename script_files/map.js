@@ -61,13 +61,104 @@ export const maps = [
     "#---------------------------------------------------------------#---#",
     "#####################################################################"
   ],
+  [
+    "##################",
+    "#----------------#",
+    "#-S-C-D-Z-/-\\-T-P#",
+    "#----------------#",
+    "##################",
+  ]
 ];
-
-export let mapIndex = 0;
+ 
+export let mapIndex = 1;
 export let map = maps[mapIndex];
-export const mapStr = "#";
-
-//check if value is wall (for collision)
-export function isWall(x, y) {
-  return map[Math.floor(y)]?.[Math.floor(x)] === mapStr;
+//export const mapStr = "#";
+ 
+// ── Geometry definitions ──────────────────────────────────────────────────────
+// Each character maps to a geometry descriptor used by castRay.
+// solid: false  → player can walk through (collision skipped)
+// solid: true   → blocks movement (isWall returns true)
+export const GEOMETRY = {
+  // Full solid wall — original behaviour
+  "#": { type: "full",     solid: true  },
+ 
+  // Half-height slab sitting on the floor
+  // Renders as a short wall; player can walk through but not shoot through
+  "S": { type: "slab",     solid: true,  heightScale: 0.5, yOffset: 0.0 },
+ 
+  // Half-height slab hanging from the ceiling
+  "C": { type: "slab",     solid: true,  heightScale: 0.5, yOffset: -0.5 },
+ 
+  // Door on the X axis (slides open along X). openAmount 0=closed, 1=open.
+  "D": { type: "door",     solid: true,  axis: "x", openAmount: 0 },
+ 
+  // Door on the Y axis
+  "Z": { type: "door",     solid: true,  axis: "y", openAmount: 0 },
+ 
+  // Diagonal wall NW→SE  (top-left corner to bottom-right corner)
+  "/": { type: "diagonal", solid: true,  slope:  1 },
+ 
+  // Diagonal wall NE→SW  (top-right corner to bottom-left corner)
+  "\\": { type: "diagonal", solid: true, slope: -1 },
+ 
+  // Thin wall centered in the cell (like a column/fence)
+  "T": { type: "thin",     solid: true,  thickness: 0.1, planeOffset: 0.45 },
+ 
+  // Round pillar (thin wall checked on both axes)
+  "P": { type: "pillar",   solid: true,  radius: 0.2 },
+};
+ 
+// Returns the geometry descriptor for a map character, or null for empty space.
+export function getGeometry(char) {
+  return GEOMETRY[char] ?? null;
 }
+ 
+// ── Door animation state ──────────────────────────────────────────────────────
+// Keyed by "x,y". openAmount: 0 (closed) → 1 (fully open).
+const doorStates = {};
+ 
+export function getDoorState(mapX, mapY) {
+  return doorStates[`${mapX},${mapY}`] ?? { openAmount: 0, opening: false };
+}
+ 
+export function toggleDoor(mapX, mapY) {
+  const key = `${mapX},${mapY}`;
+  if (!doorStates[key]) doorStates[key] = { openAmount: 0, opening: false };
+  doorStates[key].opening = !doorStates[key].opening;
+}
+ 
+// Call once per frame from your game loop (or from update() in player.js).
+export function updateDoors(dt) {
+  for (const key in doorStates) {
+    const d = doorStates[key];
+    const speed = 1.5 * dt; // dt in seconds; door opens/closes in ~0.67 s
+    if (d.opening) d.openAmount = Math.min(1, d.openAmount + speed);
+    else           d.openAmount = Math.max(0, d.openAmount - speed);
+ 
+    // Sync openAmount back into GEOMETRY so castRay picks it up
+    const [mx, my] = key.split(",").map(Number);
+    const char = map[my]?.[mx];
+    const geo  = GEOMETRY[char];
+    if (geo?.type === "door") geo.openAmount = d.openAmount;
+  }
+}
+ 
+// ── Collision helpers ─────────────────────────────────────────────────────────
+ 
+// Original isWall — used by player.js for movement collision.
+// Respects the solid flag so non-solid geometry doesn't block the player.
+export function isWall(x, y) {
+  const char = map[Math.floor(y)]?.[Math.floor(x)];
+  if (!char) return false;
+  const geo = getGeometry(char);
+  if (!geo) return false; // empty / unknown char
+  if (!geo.solid) return false;
+ 
+  // Doors: only solid when closed enough to block passage
+  if (geo.type === "door") {
+    return geo.openAmount < 0.9; // passable when almost/fully open
+  }
+ 
+  return true;
+}
+ 

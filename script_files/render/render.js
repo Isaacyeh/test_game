@@ -118,20 +118,28 @@ export function render(canvas, ctx) {
   let prevTileY = Math.floor(player.y);
  
   for (let i = 0; i < rays; i++) {
-    const rayAngle = player.angle - FOV / 2 + (i / rays) * FOV;
-    const hit = castRay(rayAngle);
-    const dist = hit.dist * Math.cos(rayAngle - player.angle);
+   
+    const hit    = castRay(rayAngle);
+    const dist   = hit.dist * Math.cos(rayAngle - player.angle);
     const height = canvas.height / Math.max(dist, 0.0001);
-    depth[i] = dist;
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(i, horizon - height / 2, 1, height);
-    const hitX = player.x + Math.cos(rayAngle) * hit.dist;
-    const hitY = player.y + Math.sin(rayAngle) * hit.dist;
+    depth[i]     = dist;
+ 
+    // heightScale shrinks slabs; yOffset shifts them up/down (ceiling slabs)
+    const drawH   = Math.floor(height * (hit.heightScale ?? 1));
+    const yShift  = Math.floor(height * (hit.yOffset   ?? 0));
+ 
+    // Shade vertical (EW) faces slightly darker for depth
+    ctx.fillStyle = hit.vertical ? "#cccccc" : "#ffffff";
+    ctx.fillRect(i, horizon - drawH / 2 + yShift, 1, drawH);
+ 
+    // Tile-edge darkening (your existing border code — unchanged)
+    const hitX  = player.x + Math.cos(rayAngle) * hit.dist;
+    const hitY  = player.y + Math.sin(rayAngle) * hit.dist;
     const tileX = Math.floor(hitX);
     const tileY = Math.floor(hitY);
     if (tileX !== prevTileX || tileY !== prevTileY) {
       ctx.fillStyle = "#000000";
-      ctx.fillRect(i, horizon - height / 2, 1, height);
+      ctx.fillRect(i, horizon - drawH / 2 + yShift, 1, drawH);
     }
     prevTileX = tileX;
     prevTileY = tileY;
