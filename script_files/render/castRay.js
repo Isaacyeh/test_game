@@ -5,16 +5,18 @@ import { map, getGeometry } from "../map.js";
 // dist is RAW ray distance so render.js fish-eye fix works unchanged:
 //   const dist = hit.dist * Math.cos(rayAngle - player.angle)
 
-const MIN_DIST = 0.05; // never return a wall closer than this — prevents
-                        // infinite wall height when player grazes a surface
-
 export function castRay(angle) {
   const { player } = getState();
   const dirX = Math.cos(angle);
   const dirY = Math.sin(angle);
 
-  let mapX = Math.floor(player.x);
-  let mapY = Math.floor(player.y);
+  // The tile the player is standing in — we always skip hits in this tile
+  // so the ray never self-intersects with the player's own cell.
+  const startTileX = Math.floor(player.x);
+  const startTileY = Math.floor(player.y);
+
+  let mapX = startTileX;
+  let mapY = startTileY;
 
   const deltaDistX = Math.abs(dirX) < 1e-10 ? 1e30 : Math.abs(1 / dirX);
   const deltaDistY = Math.abs(dirY) < 1e-10 ? 1e30 : Math.abs(1 / dirY);
@@ -30,12 +32,8 @@ export function castRay(angle) {
   const MAX_DIST = 20;
 
   // cosAngleDiff converts perpendicular dist → raw ray dist.
-  // Clamp away from zero so we never divide by a tiny number.
-  // Math.cos(angle - player.angle) is always in [-1,1]; for a valid
-  // FOV (< 180°) the rays in front always give a positive value,
-  // but floating-point wobble can push it slightly negative at the
-  // very edge columns. Taking the absolute value is safe because
-  // perpDist is already positive and we only care about magnitude.
+  // Always take absolute value and clamp away from zero so we
+  // never get a negative or infinite rawDist at extreme FOV edges.
   const cosAngleDiff = Math.max(Math.abs(Math.cos(angle - player.angle)), 0.001);
 
   for (let guard = 0; guard < 300; guard++) {
@@ -54,10 +52,14 @@ export function castRay(angle) {
       ? (mapX - player.x + (1 - stepX) / 2) / dirX
       : (mapY - player.y + (1 - stepY) / 2) / dirY;
 
-    // Skip hits that are behind the player or too close (avoids
-    // the wall the player is currently inside from flash-rendering)
-    if (perpDist < MIN_DIST) continue;
     if (perpDist > MAX_DIST) break;
+    if (perpDist <= 0) continue;
+
+    // Always skip the tile the player is standing in.
+    // This is the correct fix — not a minimum distance clamp,
+    // which would hide close walls. The start tile is empty by
+    // definition (canMove ensures the player never enters a wall tile).
+    if (mapX === startTileX && mapY === startTileY) continue;
 
     const char = map[mapY]?.[mapX];
     if (!char || char === "-" || char === " ") continue;
@@ -65,12 +67,8 @@ export function castRay(angle) {
     const geo = getGeometry(char);
     if (!geo) continue;
 
-    // false walls (solid:false) are visible but ray passes through them
-    // so the player sees the wall behind — gives a "secret passage" look
-    if (!geo.solid && geo.type !== "full") continue;
-    // For "full" type specifically check the render flag; false walls
-    // have type "full" with solid:false so we still render them but
-    // don't block the ray (continue so we see whatever is behind)
+    // False walls (solid:false, type:"full") — ray passes through so
+    // the player sees whatever solid wall is behind them.
     if (geo.type === "full" && !geo.solid) continue;
 
     const rawDist = perpDist / cosAngleDiff;
@@ -96,25 +94,25 @@ export function castRay(angle) {
     }
 
     if (geo.type === "door") {
-      const hit = castDoor(player, dirX, dirY, cosAngleDiff, mapX, mapY, geo, MIN_DIST);
+      const hit = castDoor(player, dirX, dirY, cosAngleDiff, mapX, mapY, geo);
       if (hit) return hit;
       continue;
     }
 
     if (geo.type === "diagonal") {
-      const hit = castDiagonal(player, dirX, dirY, cosAngleDiff, mapX, mapY, geo, MIN_DIST);
+      const hit = castDiagonal(player, dirX, dirY, cosAngleDiff, mapX, mapY, geo);
       if (hit) return hit;
       continue;
     }
 
     if (geo.type === "thin") {
-      const hit = castThin(player, dirX, dirY, cosAngleDiff, mapX, mapY, geo, MIN_DIST);
+      const hit = castThin(player, dirX, dirY, cosAngleDiff, mapX, mapY, geo);
       if (hit) return hit;
       continue;
     }
 
     if (geo.type === "pillar") {
-      const hit = castPillar(player, dirX, dirY, cosAngleDiff, mapX, mapY, geo, MIN_DIST);
+      const hit = castPillar(player, dirX, dirY, cosAngleDiff, mapX, mapY, geo);
       if (hit) return hit;
       continue;
     }
@@ -134,17 +132,17 @@ function getWallX(player, dirX, dirY, mapX, mapY, side, perpDist) {
   return x - Math.floor(x);
 }
 
-function castDoor(player, dirX, dirY, cosAngleDiff, mapX, mapY, geo, minDist) {
+function castDoor(player, dirX, dirY, cosAngleDiff, mapX, mapY, geo) {
   let t, wallX;
   if (geo.axis === "x") {
     if (Math.abs(dirY) < 1e-10) return null;
     t = (mapY + 0.5 - player.y) / dirY;
-    if (t < minDist) return null;
+    if (t <= 0) return null;
     wallX = player.x + t * dirX - mapX;
   } else {
     if (Math.abs(dirX) < 1e-10) return null;
     t = (mapX + 0.5 - player.x) / dirX;
-    if (t < minDist) return null;
+    if (t <= 0) return null;
     wallX = player.y + t * dirY - mapY;
   }
   if (wallX < 0 || wallX > 1) return null;
@@ -160,7 +158,7 @@ function castDoor(player, dirX, dirY, cosAngleDiff, mapX, mapY, geo, minDist) {
   };
 }
 
-function castDiagonal(player, dirX, dirY, cosAngleDiff, mapX, mapY, geo, minDist) {
+function castDiagonal(player, dirX, dirY, cosAngleDiff, mapX, mapY, geo) {
   let t;
   if (geo.slope === 1) {
     const denom = dirX + dirY;
@@ -171,7 +169,7 @@ function castDiagonal(player, dirX, dirY, cosAngleDiff, mapX, mapY, geo, minDist
     if (Math.abs(denom) < 1e-10) return null;
     t = (mapX - mapY - player.x + player.y) / denom;
   }
-  if (t < minDist) return null;
+  if (t <= 0) return null;
   const hitX = player.x + t * dirX;
   const hitY = player.y + t * dirY;
   if (hitX < mapX || hitX > mapX + 1 || hitY < mapY || hitY > mapY + 1) return null;
@@ -185,7 +183,7 @@ function castDiagonal(player, dirX, dirY, cosAngleDiff, mapX, mapY, geo, minDist
   };
 }
 
-function castThin(player, dirX, dirY, cosAngleDiff, mapX, mapY, geo, minDist) {
+function castThin(player, dirX, dirY, cosAngleDiff, mapX, mapY, geo) {
   const off   = geo.planeOffset ?? 0.45;
   const thick = geo.thickness   ?? 0.1;
   const candidates = [];
@@ -193,14 +191,14 @@ function castThin(player, dirX, dirY, cosAngleDiff, mapX, mapY, geo, minDist) {
   for (const py of [mapY + off, mapY + off + thick]) {
     if (Math.abs(dirY) < 1e-10) continue;
     const t = (py - player.y) / dirY;
-    if (t < minDist) continue;
+    if (t <= 0) continue;
     const hx = player.x + t * dirX;
     if (hx >= mapX && hx <= mapX + 1) candidates.push({ t, wallX: hx - mapX });
   }
   for (const px of [mapX + off, mapX + off + thick]) {
     if (Math.abs(dirX) < 1e-10) continue;
     const t = (px - player.x) / dirX;
-    if (t < minDist) continue;
+    if (t <= 0) continue;
     const hy = player.y + t * dirY;
     if (hy >= mapY && hy <= mapY + 1) candidates.push({ t, wallX: hy - mapY });
   }
@@ -218,13 +216,12 @@ function castThin(player, dirX, dirY, cosAngleDiff, mapX, mapY, geo, minDist) {
   };
 }
 
-function castPillar(player, dirX, dirY, cosAngleDiff, mapX, mapY, geo, minDist) {
+function castPillar(player, dirX, dirY, cosAngleDiff, mapX, mapY, geo) {
   const cx = mapX + 0.5;
   const cy = mapY + 0.5;
   const r  = geo.radius ?? 0.2;
   const ox = player.x - cx;
   const oy = player.y - cy;
-  // a = 1 because dir is a unit vector
   const b    = 2 * (ox * dirX + oy * dirY);
   const c    = ox * ox + oy * oy - r * r;
   const disc = b * b - 4 * c;
@@ -232,7 +229,7 @@ function castPillar(player, dirX, dirY, cosAngleDiff, mapX, mapY, geo, minDist) 
   const sq = Math.sqrt(disc);
   const t1 = (-b - sq) / 2;
   const t2 = (-b + sq) / 2;
-  const t  = t1 >= minDist ? t1 : (t2 >= minDist ? t2 : null);
+  const t  = t1 > 0 ? t1 : (t2 > 0 ? t2 : null);
   if (t === null) return null;
   const hitX  = player.x + t * dirX;
   const hitY  = player.y + t * dirY;
@@ -245,4 +242,15 @@ function castPillar(player, dirX, dirY, cosAngleDiff, mapX, mapY, geo, minDist) 
     wallX,
     isPillar:    true,
   };
+}
+const WALL_MARGIN = 0.1;
+
+function canMove(x, y) {
+  const r = PLAYER_RADIUS + WALL_MARGIN;
+  return (
+    !isWall(x + r, y + r) &&
+    !isWall(x - r, y + r) &&
+    !isWall(x + r, y - r) &&
+    !isWall(x - r, y - r)
+  );
 }

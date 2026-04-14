@@ -61,9 +61,16 @@ export const maps = [
     "#---------------------------------------------------------------#---#",
     "#####################################################################"
   ],
+  [
+    "############################",
+    "#------|-----------------#",
+    "#-------#----------------#",
+    "#------/-----------------#",
+    "############################",
+  ],
 ];
 
-export let mapIndex = 0;
+export let mapIndex = 1;
 export let map = maps[mapIndex];
 export const mapStr = "#";
 
@@ -78,7 +85,7 @@ export const mapStr = "#";
 //  "D"  Door (x-axis)      — slides open on E; hitbox shrinks as it opens
 //  "Z"  Door (y-axis)      — same but y-axis
 //  "/"  Diagonal NW→SE     — player collides with the diagonal line itself
-//  "\"  Diagonal NE→SW     — same, opposite slope
+//  "|"  Diagonal NE→SW     — same, opposite slope
 //  "T"  Thin wall          — narrow centered wall, thin hitbox strip
 //  "P"  Pillar             — round column, circular hitbox
 //
@@ -90,9 +97,9 @@ export const GEOMETRY = {
   "D":  { type: "door",     solid: true,  render: true,  axis: "x", openAmount: 0 },
   "Z":  { type: "door",     solid: true,  render: true,  axis: "y", openAmount: 0 },
   "/":  { type: "diagonal", solid: true,  render: true,  slope:  1 },
-  "\\": { type: "diagonal", solid: true,  render: true,  slope: -1 },
+  "|": { type: "diagonal", solid: true,  render: true,  slope: -1 },
   "T":  { type: "thin",     solid: true,  render: true,  planeOffset: 0.45, thickness: 0.1 },
-  "P":  { type: "pillar",   solid: true,  render: true,  radius: 0.2 },
+  "P":  { type: "pillar",   solid: true,  render: true,  radius: 0.15 },
 };
 
 export function getGeometry(char) {
@@ -185,7 +192,7 @@ function collidesWithGeometry(geo, px, py, tileX, tileY) {
 
     case "pillar": {
       // Circle centered at (0.5, 0.5)
-      const r  = geo.radius ?? 0.2;
+      const r  = geo.radius ?? 0.1;
       const dx = lx - 0.5;
       const dy = ly - 0.5;
       return dx * dx + dy * dy < r * r;

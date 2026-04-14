@@ -150,7 +150,18 @@ export function respawn() {
     state.isRespawning = false;
   }, 2000);
 }
- 
+const WALL_MARGIN = 0.01;
+/*
+function canMove(x, y) {
+  const r = PLAYER_RADIUS + WALL_MARGIN;
+  return (
+    !isWall(x + r, y + r) &&
+    !isWall(x - r, y + r) &&
+    !isWall(x + r, y - r) &&
+    !isWall(x - r, y - r)
+  );
+}
+*/
 function canMove(x, y) {
   return (
     !isWall(x + PLAYER_RADIUS, y + PLAYER_RADIUS) &&
@@ -159,7 +170,7 @@ function canMove(x, y) {
     !isWall(x - PLAYER_RADIUS, y - PLAYER_RADIUS)
   );
 }
- 
+
 export function update() {
   if (!keysRef || !wsRef || !mouseRef) return;
  
