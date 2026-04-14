@@ -36,6 +36,15 @@ export function castRay(angle) {
   // never get a negative or infinite rawDist at extreme FOV edges.
   const cosAngleDiff = Math.max(Math.abs(Math.cos(angle - player.angle)), 0.001);
 
+  // If the player's start tile contains partial geometry (pillars, diagonals,
+  // thin walls, doors, false walls, slabs), cast against that geometry first.
+  const startChar = map[startTileY]?.[startTileX];
+  const startGeo = startChar ? getGeometry(startChar) : null;
+  if (startGeo && !(startGeo.type === "full" && startGeo.solid)) {
+    const startHit = castStartTile(player, dirX, dirY, cosAngleDiff, startTileX, startTileY, startGeo);
+    if (startHit) return startHit;
+  }
+
   for (let guard = 0; guard < 300; guard++) {
     let side;
     if (sideDistX < sideDistY) {
@@ -54,12 +63,6 @@ export function castRay(angle) {
 
     if (perpDist > MAX_DIST) break;
     if (perpDist <= 0) continue;
-
-    // Always skip the tile the player is standing in.
-    // This is the correct fix — not a minimum distance clamp,
-    // which would hide close walls. The start tile is empty by
-    // definition (canMove ensures the player never enters a wall tile).
-    if (mapX === startTileX && mapY === startTileY) continue;
 
     const char = map[mapY]?.[mapX];
     if (!char || char === "-" || char === " ") continue;
@@ -243,6 +246,52 @@ function castPillar(player, dirX, dirY, cosAngleDiff, mapX, mapY, geo) {
     isPillar:    true,
   };
 }
+
+function castTileBoundary(player, dirX, dirY, cosAngleDiff, mapX, mapY, heightScale, yOffset) {
+  const tX = dirX > 0 ? (mapX + 1 - player.x) / dirX : dirX < 0 ? (mapX - player.x) / dirX : Infinity;
+  const tY = dirY > 0 ? (mapY + 1 - player.y) / dirY : dirY < 0 ? (mapY - player.y) / dirY : Infinity;
+  const candidates = [];
+  if (tX > 0) candidates.push({ t: tX, vertical: true });
+  if (tY > 0) candidates.push({ t: tY, vertical: false });
+  if (!candidates.length) return null;
+
+  candidates.sort((a, b) => a.t - b.t);
+  const { t, vertical } = candidates[0];
+  const hitX = player.x + t * dirX;
+  const hitY = player.y + t * dirY;
+  if (hitX < mapX || hitX > mapX + 1 || hitY < mapY || hitY > mapY + 1) return null;
+
+  return {
+    dist:        t / cosAngleDiff,
+    vertical,
+    heightScale,
+    yOffset,
+    wallX:       vertical ? hitY - mapY : hitX - mapX,
+  };
+}
+
+function castStartTile(player, dirX, dirY, cosAngleDiff, mapX, mapY, geo) {
+  if (geo.type === "full") {
+    return castTileBoundary(player, dirX, dirY, cosAngleDiff, mapX, mapY, 1, 0);
+  }
+  if (geo.type === "slab") {
+    return castTileBoundary(player, dirX, dirY, cosAngleDiff, mapX, mapY, geo.heightScale ?? 1, geo.yOffset ?? 0);
+  }
+  if (geo.type === "door") {
+    return castDoor(player, dirX, dirY, cosAngleDiff, mapX, mapY, geo);
+  }
+  if (geo.type === "diagonal") {
+    return castDiagonal(player, dirX, dirY, cosAngleDiff, mapX, mapY, geo);
+  }
+  if (geo.type === "thin") {
+    return castThin(player, dirX, dirY, cosAngleDiff, mapX, mapY, geo);
+  }
+  if (geo.type === "pillar") {
+    return castPillar(player, dirX, dirY, cosAngleDiff, mapX, mapY, geo);
+  }
+  return null;
+}
+
 const WALL_MARGIN = 0.1;
 
 function canMove(x, y) {
