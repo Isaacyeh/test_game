@@ -15,7 +15,7 @@ import {
 import { isWall } from "./map.js";
 import { debugLog } from "./debug.js";
  
-const SPAWN = { x: 3, y: 17, angle: 0, sneaking: false };
+const SPAWN = { x: 31, y: 7, angle: 0, sneaking: false };
  
 // Stamina constants
 const MAX_STAMINA = 1;
@@ -161,7 +161,18 @@ export function respawn() {
     state.isRespawning = false;
   }, 2000);
 }
- 
+const WALL_MARGIN = 0.01;
+/*
+function canMove(x, y) {
+  const r = PLAYER_RADIUS + WALL_MARGIN;
+  return (
+    !isWall(x + r, y + r) &&
+    !isWall(x - r, y + r) &&
+    !isWall(x + r, y - r) &&
+    !isWall(x - r, y - r)
+  );
+}
+*/
 function canMove(x, y) {
   return (
     !isWall(x + PLAYER_RADIUS, y + PLAYER_RADIUS) &&
@@ -170,7 +181,7 @@ function canMove(x, y) {
     !isWall(x - PLAYER_RADIUS, y - PLAYER_RADIUS)
   );
 }
- 
+
 export function update() {
   if (!keysRef || !wsRef || !mouseRef) return;
  
