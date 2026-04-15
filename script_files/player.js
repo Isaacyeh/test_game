@@ -212,7 +212,7 @@ export function update() {
   let moveY = 0;
  
   // Sneak = Control, Sprint = Shift
-  state.player.sneaking = !blockControls && (keysRef.Control || keysRef.ControlLeft || keysRef.ControlRight);
+  state.player.sneaking = !blockControls && (keysRef.c || keysRef.C);
   const isTryingToSprint = !blockControls && (keysRef.Shift || keysRef.ShiftLeft || keysRef.ShiftRight) && !state.player.sneaking;
  
   // Stamina logic
@@ -281,7 +281,7 @@ export function update() {
     state.onGround = true;
   }
  
-  const canShoot = !blockControls && !state.player.sneaking;
+  const canShoot = !blockControls /* && !state.player.sneaking*/;
   const qPressed = canShoot && Boolean(keysRef.q);
   const mousePressed = canShoot && Boolean(mouseRef.buttons[0]);
   const shouldShoot = (qPressed && !wasQPressed) || (mousePressed && !wasMousePressed);
