@@ -68,9 +68,16 @@ export const maps = [
     "#------/-----------------#",
     "############################",
   ],
+  [
+    "--#-------",
+    "-/-|------",
+    "#---P-----",
+    "-|-/------",
+    "--#-------",
+  ],
 ];
 
-export let mapIndex = 1;
+export let mapIndex = 2;
 export let map = maps[mapIndex];
 export const mapStr = "#";
 
@@ -79,9 +86,7 @@ export const mapStr = "#";
 // Map characters and what they do:
 //
 //  "#"  Full wall          — solid cube, full hitbox
-//  "F"  False wall         — looks like "#" but player walks straight through
-//  "S"  Floor slab         — half-height wall on the floor, half hitbox
-//  "C"  Ceiling slab       — half-height wall on ceiling, player walks under
+//  "F"  False wall         — looks like "#" but player walks straight through *fix*
 //  "D"  Door (x-axis)      — slides open on E; hitbox shrinks as it opens
 //  "Z"  Door (y-axis)      — same but y-axis
 //  "/"  Diagonal NW→SE     — player collides with the diagonal line itself
@@ -92,14 +97,9 @@ export const mapStr = "#";
 export const GEOMETRY = {
   "#":  { type: "full",     solid: true,  render: true  },
   "F":  { type: "full",     solid: false, render: true  }, // false wall — visible but passable
-  "S":  { type: "slab",     solid: true,  render: true,  heightScale: 0.5, yOffset:  0.0 },
-  "C":  { type: "slab",     solid: false, render: true,  heightScale: 0.5, yOffset: -0.5 }, // walk under
-  "D":  { type: "door",     solid: true,  render: true,  axis: "x", openAmount: 0 },
-  "Z":  { type: "door",     solid: true,  render: true,  axis: "y", openAmount: 0 },
   "/":  { type: "diagonal", solid: true,  render: true,  slope:  1 },
   "|": { type: "diagonal", solid: true,  render: true,  slope: -1 },
-  "T":  { type: "thin",     solid: true,  render: true,  planeOffset: 0.45, thickness: 0.1 },
-  "P":  { type: "pillar",   solid: true,  render: true,  radius: 0.15 },
+  "P":  { type: "pillar",   solid: true,  render: true,  radius: 0.1 },
 };
 
 export function getGeometry(char) {
@@ -141,28 +141,6 @@ function collidesWithGeometry(geo, px, py, tileX, tileY) {
       // Only solid if the geo says so (false walls return false here)
       return geo.solid;
 
-    case "slab": {
-      // Floor slab: solid in the bottom half of the tile (ly < 0.5 in world means
-      // the player is overlapping the slab's footprint — slabs block XY movement
-      // but not vertical, so we just treat it as a full-tile XY blocker since
-      // the player can't jump over walls in this engine).
-      // Set solid:false on "C" ceiling slab so player walks under it.
-      return geo.solid;
-    }
-
-    case "door": {
-      const open = geo.openAmount ?? 0;
-      if (open >= 0.9) return false; // fully open — walk through
-      // The door panel spans the cell; the open gap is [0, open] on the non-axis side.
-      // Collision: player is in the closed portion of the door.
-      if (geo.axis === "x") {
-        // Panel runs along X; gap opens from lx=0 upward
-        return lx > open;
-      } else {
-        return ly > open;
-      }
-    }
-
     case "diagonal": {
       // slope = 1:  line from (0,1)→(1,0), equation: lx + ly = 1
       //   solid on the side where lx + ly > 1
@@ -176,18 +154,6 @@ function collidesWithGeometry(geo, px, py, tileX, tileY) {
         const dist = Math.abs(lx - ly);
         return dist < MARGIN;
       }
-    }
-
-    case "thin": {
-      // Thin wall is a narrow strip centered in the tile.
-      // Solid if player is within [planeOffset, planeOffset+thickness] on both axes.
-      const off   = geo.planeOffset ?? 0.45;
-      const thick = geo.thickness   ?? 0.1;
-      // Check Y-parallel plane (horizontal strip)
-      const inYStrip = ly >= off && ly <= off + thick;
-      // Check X-parallel plane (vertical strip)
-      const inXStrip = lx >= off && lx <= off + thick;
-      return inYStrip || inXStrip;
     }
 
     case "pillar": {
