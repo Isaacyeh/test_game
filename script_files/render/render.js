@@ -7,6 +7,24 @@ import { getCrosshairOptions } from "../crosshair.js";
 // Cache for player sprite images
 const playerImages = new Map(); // id -> { img, url }
  
+// Set of sprite URLs that should be compressed to 0.5 aspect ratio
+const compressedSprites = new Set();
+ 
+// Load preset sprites from sprites.json and add default
+fetch('/sprites.json')
+  .then(response => response.json())
+  .then(data => {
+    // Add default sprite
+    compressedSprites.add("https://www.clker.com/cliparts/a/4/1/d/1301963432622081819stick_figure%20(1).png");
+    // Add all preset sprites
+    data.forEach(sprite => compressedSprites.add(sprite.url));
+  })
+  .catch(error => {
+    console.warn('Failed to load sprites.json for compression list:', error);
+    // Fallback: just default
+    compressedSprites.add("https://www.clker.com/cliparts/a/4/1/d/1301963432622081819stick_figure%20(1).png");
+  });
+ 
 // Default sprite dimensions (the stick figure URL used as baseline)
 // We treat a 1:2 aspect ratio (width:height) as the "default" hitbox reference.
 // bodyWidth = size / 2  (from original code), so default hitbox width = size/2,
@@ -370,7 +388,11 @@ export function render(canvas, ctx) {
  
       let imgAspect = DEFAULT_ASPECT;
       if (imgReady) {
-        imgAspect = playerImg.naturalWidth / playerImg.naturalHeight;
+        if (compressedSprites.has(p.sprite)) {
+          imgAspect = 0.5;
+        } else {
+          imgAspect = playerImg.naturalWidth / playerImg.naturalHeight;
+        }
       }
  
       // Rendered image size (based on height = size, width = size * aspect)
@@ -443,16 +465,6 @@ export function render(canvas, ctx) {
  
   drawHealthBar(ctx, hudX, hpY, hudW, hpH, health / MAX_HEALTH);
   drawStaminaBar(ctx, hudX, stY, hudW, stH, stamina, staminaCooldown);
- 
-  // Tab hint (bottom right corner)
-  ctx.save();
-  ctx.font = "11px 'Courier New', monospace";
-  ctx.fillStyle = "rgba(150,150,170,0.55)";
-  ctx.textAlign = "right";
-  ctx.textBaseline = "bottom";
-  ctx.fillText("Hold TAB for leaderboard", canvas.width - 14, canvas.height - 10);
-  ctx.restore();
- 
   drawCrosshair(canvas, ctx);
  
   // ── Leaderboard overlay (Tab held) ───────────────────────────────────────
