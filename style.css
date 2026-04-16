@@ -371,6 +371,25 @@ canvas {
   color: #ccc;
   border-color: rgba(255, 255, 255, 0.15);
 }
+
+.kb-save-btn {
+  margin-top: 1.1rem;
+  width: 100%;
+  padding: 9px;
+  font-size: 14px;
+  color: white;
+  font-weight:bold;
+  background-color: lightslategray;
+  border: 2px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  cursor: pointer;w
+  transition: background 0.15s, color 0.15s;
+}
+.kb-save-btn:hover {
+  background: white;
+  color: lightslategray;
+  border-color: lightslategray;
+}
  
 /* ── Settings toggle rows ─────────────────────────────────────────────────── */
 .toggle-row {
