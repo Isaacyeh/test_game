@@ -45,7 +45,7 @@ export function initKeyMouseRef(keys, mouse) {
 }
 
 function displayKey(k) {
-  const map = { " ": "Space", leftClick: "Left click", ArrowLeft: "Left Arrow", ArrowRight: "Right Arrow", ArrowUp: "Up Arrow", ArrowDown: "Down Arrow" };
+  const map = { " ": "Space", leftClick: "Left click", middleClick: "Middle click", rightClick: "Right click", ArrowLeft: "Left Arrow", ArrowRight: "Right Arrow", ArrowUp: "Up Arrow", ArrowDown: "Down Arrow" };
   return map[k] || (k.length === 1 ? k.toUpperCase() : k);
 }
 
@@ -78,9 +78,32 @@ function startListening(id, btn) {
   listeningId = id;
   renderKeybinds();
 
-  const onKey = (e) => { e.preventDefault(); keybinds[id] = e.key; listeningId = null; cleanup(); renderKeybinds(); };
-  const onMouse = (e) => { if (e.target === btn) return; keybinds[id] = "leftClick"; listeningId = null; cleanup(); renderKeybinds(); };
-  const cleanup = () => { window.removeEventListener("keydown", onKey); window.removeEventListener("mousedown", onMouse); };
+  const onKey = (e) => { 
+    e.preventDefault(); 
+    keybinds[id] = e.key;
+    listeningId = null; 
+    cleanup(); 
+    renderKeybinds();
+  };
+
+  const onMouse = (e) => { 
+    if (e.target === btn) return;
+    e.preventDefault();
+    switch (e.button) {
+      case 0: keybinds[id] = "leftClick"; break;
+      case 1: keybinds[id] = "middleClick"; break;
+      case 2: keybinds[id] = "rightClick"; break;
+      default: return;
+    }    
+    listeningId = null; 
+    cleanup(); 
+    renderKeybinds(); 
+  };
+
+  const cleanup = () => { 
+    window.removeEventListener("keydown", onKey); 
+    window.removeEventListener("mousedown", onMouse); 
+  };
 
   window.addEventListener("keydown", onKey);
   setTimeout(() => window.addEventListener("mousedown", onMouse), 50);
@@ -99,10 +122,4 @@ export function initKeybindMenu(onClose) {
   });
 
   renderKeybinds();
-}
-
-//No repeats
-function validKeybinds() {
-  const values = Object.values(keybinds);
-  return new Set(values).size === values.length;
 }
