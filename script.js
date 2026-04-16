@@ -12,6 +12,7 @@ import { render } from "./script_files/render/render.js";
 import { showSpriteMenu } from "./UI/spriteMenu.js";
 import { setCrosshairOptions } from "./script_files/crosshair.js";
 import { debugToggles } from "./script_files/debug.js";
+import { keybinds, initKeybindMenu } from "./script_files/keybindControls.js";
  
 const keys = {};
 const mouse = { x: 0, y: 0, dx: 0, dy: 0, buttons: {} };
@@ -26,6 +27,8 @@ const closeCustomization    = document.getElementById("closeCustomization");
 const crosshairImageInput   = document.getElementById("crosshairImageInput");
 const crosshairOpacityInput = document.getElementById("crosshairOpacityInput");
 const confirmCustomization  = document.getElementById("confirmCustomization");
+const keybindsOverlay       = document.getElementById("keybindsOverlay");
+const keybindsMenuLink      = document.getElementById("keybindsMenuLink");
 const settingsMenuLink      = document.getElementById("settingsMenuLink");
 const settingsOverlay       = document.getElementById("settingsOverlay");
 const closeSettings         = document.getElementById("closeSettings");
@@ -54,13 +57,17 @@ function clearInputState() {
 function isCustomizationOpen() {
   return !customizationOverlay.classList.contains("hidden");
 }
+
+function isKeybindsOpen() {
+  return !keybindsOverlay.classList.contains("hidden");
+}
  
 function isSettingsOpen() {
   return !settingsOverlay.classList.contains("hidden");
 }
  
 function isAnyMenuOpen() {
-  return isCustomizationOpen() || isSettingsOpen();
+  return isCustomizationOpen() || isKeybindsOpen() || isSettingsOpen();
 }
  
 let _prevMenuOpen = false;
@@ -159,7 +166,35 @@ confirmCustomization.addEventListener("click", () => {
   setCrosshairOptions({ opacity: appliedCrosshairOpacity, imageSrc: appliedCrosshairImage });
   closeCustomizationOverlay();
 });
- 
+//--- Keybinds overlay (custom controls) ─────────────────────────────────────────
+function openKeybindsOverlay() {
+  keybindsOverlay.classList.remove("hidden");
+  keybindsOverlay.setAttribute("aria-hidden", "false");
+  syncMenuControlState();
+  clearInputState();
+  if (document.pointerLockElement === canvas) document.exitPointerLock();
+}
+
+function closeKeybindsOverlay() {
+  keybindsOverlay.classList.add("hidden");
+  keybindsOverlay.setAttribute("aria-hidden", "true");
+  syncMenuControlState();
+  clearInputState();
+}
+
+keybindsMenuLink.addEventListener("click", (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  menu.classList.add("hidden");
+  openKeybindsOverlay();
+});
+
+keybindsOverlay.addEventListener("click", (e) => {
+  if (e.target === keybindsOverlay) closeKeybindsOverlay();
+});
+
+initKeybindMenu(closeKeybindsOverlay);
+
 // ── Settings overlay (debug toggles) ─────────────────────────────────────────
 function openSettingsOverlay() {
   settingsOverlay.classList.remove("hidden");
@@ -205,6 +240,9 @@ const chatInput = document.getElementById("chatInput");
 const sendBtn   = document.getElementById("sendBtn");
  
 // ── WebSocket + game init (with retry) ───────────────────────────────────────
+
+
+
 const loader = window.__loader || {
   setProgress:  () => {},
   setRetryInfo: () => {},
