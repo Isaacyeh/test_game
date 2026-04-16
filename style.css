@@ -382,7 +382,7 @@ canvas {
   background-color: lightslategray;
   border: 2px solid rgba(255, 255, 255, 0.08);
   border-radius: 8px;
-  cursor: pointer;w
+  cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
 .kb-save-btn:hover {

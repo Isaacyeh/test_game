@@ -1,7 +1,7 @@
 let keysRef = null;
 let mouseRef = null;
 
-const importedKeybinds = JSON.parse(localStorage.getItem("keybinds"));
+const importedKeybinds = JSON.parse(localStorage.getItem("keybinds") || "{}");
 
 const defaults = {
   moveForward: "w",
