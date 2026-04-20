@@ -10,7 +10,7 @@ import {
 } from "./script_files/player.js";
 import { SPAWN_INVINCIBILITY_DURATION } from "./script_files/constant.js";
 import { setupChat } from "./script_files/chat.js";
-import { render, updateLeaderboard } from "./script_files/render/render.js";
+import { render, updateLeaderboard, addRemoteTracer } from "./script_files/render/render.js";
 import { loadSprites } from "./UI/spriteMenu.js";
 import { setCrosshairOptions } from "./script_files/crosshair.js";
 import { debugToggles } from "./script_files/debug.js";
@@ -45,7 +45,6 @@ let appliedCrosshairBlobUrl = null;
  
 // ── Skin / sprite state ───────────────────────────────────────────────────────
 let pendingSkinUrl  = "";
-let pendingSkinBlob = null;
  
 menu.classList.add("hidden");
 customizationOverlay.classList.add("hidden");
@@ -185,7 +184,6 @@ async function buildSkinSection() {
   presetSelect.addEventListener("change", (e) => {
     const url = e.target.value;
     if (!url) return;
-    if (pendingSkinBlob) { URL.revokeObjectURL(pendingSkinBlob); pendingSkinBlob = null; }
     skinUpload.value = "";
     pendingSkinUrl = url;
     updateSkinPreview(url);
@@ -196,12 +194,15 @@ async function buildSkinSection() {
   skinUpload.addEventListener("change", (e) => {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
-    if (pendingSkinBlob) { URL.revokeObjectURL(pendingSkinBlob); pendingSkinBlob = null; }
-    pendingSkinBlob = URL.createObjectURL(file);
-    pendingSkinUrl = pendingSkinBlob;
-    presetSelect.value = "";
-    updateSkinPreview(pendingSkinBlob);
-    skinLabel.textContent = file.name;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const dataUrl = ev.target.result;
+      pendingSkinUrl = dataUrl;
+      presetSelect.value = "";
+      updateSkinPreview(dataUrl);
+      skinLabel.textContent = file.name;
+    };
+    reader.readAsDataURL(file);
   });
 }
  
@@ -213,7 +214,6 @@ function openCustomizationOverlay() {
   pendingCrosshairOpacity = appliedCrosshairOpacity;
   pendingCrosshairImage   = appliedCrosshairImage;
   pendingSkinUrl = getState().sprite;
-  if (pendingSkinBlob) { URL.revokeObjectURL(pendingSkinBlob); pendingSkinBlob = null; }
   syncMenuControlState();
   clearInputState();
   if (document.pointerLockElement === canvas) document.exitPointerLock();
@@ -435,6 +435,10 @@ function connectWebSocket() {
           loader.setProgress(90, "Starting render loop...");
           loader.addStep("render", "Starting render loop...", "wait");
         }
+      }
+      // Relay a shot from another player — start a local tracer for visibility
+      if (data.type === "bulletFired") {
+        addRemoteTracer(data);
       }
     });
  

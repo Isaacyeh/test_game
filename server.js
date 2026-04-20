@@ -21,14 +21,15 @@ app.use(express.static(path.join(__dirname), { index: "index.html" }));
 // ── Constants — must match client constant.js ─────────────────────────────────
 const HIT_DAMAGE            = 0.1;
 const PLAYER_RADIUS         = 0.2;
-const PROJECTILE_RADIUS     = 0.025;
-const PROJECTILE_HIT_RADIUS = PLAYER_RADIUS + PROJECTILE_RADIUS; // 0.225
-const PROJECTILE_HIT_RADIUS_Z = PLAYER_RADIUS + PROJECTILE_RADIUS;
+const PROJECTILE_RADIUS     = 0.0125;
+const PROJECTILE_HIT_RADIUS = PLAYER_RADIUS + PROJECTILE_RADIUS; // ~0.2125
+const PLAYER_HEIGHT         = 1.0;  // world height of the player cylinder
 const MAX_HEALTH            = 1;
 const MAX_PROJECTILES_PER_PLAYER = 20;
 const TRACER_MAX_RANGE      = 18;   // must match client
 const RAY_STEP              = 0.05; // must be small enough to not skip players
 const SPAWN_INVINCIBILITY_MS = 5_000;
+const PROJECTILE_SPEED      = 2;
  
 const SPAWN = { x: 3, y: 17, angle: 0 };
  
@@ -180,19 +181,25 @@ function isSolidAt(x, y) {
 }
  
 // ── Authoritative ray-based hit detection ─────────────────────────────────────
-// Steps along the ray, tests each player's cylinder at each step.
+// Steps along the 3D ray, tests each player's cylinder at each step.
+// pitch: vertical angle in radians (positive = up).
 // Returns the ID of the first player hit, or null.
-function rayCastHit(shooterId, originX, originY, originZ, angle) {
-  const dx   = Math.cos(angle) * RAY_STEP;
-  const dy   = Math.sin(angle) * RAY_STEP;
+function rayCastHit(shooterId, originX, originY, originZ, angle, pitch) {
+  const cosPitch = Math.cos(pitch || 0);
+  const sinPitch = Math.sin(pitch || 0);
+  const dx       = Math.cos(angle) * RAY_STEP * cosPitch;
+  const dy       = Math.sin(angle) * RAY_STEP * cosPitch;
+  const dz       = RAY_STEP * sinPitch;
   const maxSteps = Math.ceil(TRACER_MAX_RANGE / RAY_STEP);
  
   let x = originX;
   let y = originY;
+  let rayZ = originZ;
  
   for (let i = 0; i < maxSteps; i++) {
-    x += dx;
-    y += dy;
+    x    += dx;
+    y    += dy;
+    rayZ += dz;
  
     // Stop at solid wall
     if (isSolidAt(x, y)) {
@@ -200,7 +207,7 @@ function rayCastHit(shooterId, originX, originY, originZ, angle) {
       return null;
     }
  
-    // Check each potential victim
+    // Check each potential victim's cylinder
     for (const victimId in players) {
       if (victimId === shooterId) continue;
       const victim = players[victimId];
@@ -208,10 +215,14 @@ function rayCastHit(shooterId, originX, originY, originZ, angle) {
       if (Date.now() < (victim.invincibleUntil || 0)) continue;
  
       const xyDist = Math.hypot(x - victim.x, y - victim.y);
-      // Z check: ray travels flat (same z as origin); compare to victim z
-      const zDist  = Math.abs(originZ - (victim.z || 0));
+      if (xyDist > PROJECTILE_HIT_RADIUS) continue;
  
-      if (xyDist <= PROJECTILE_HIT_RADIUS && zDist <= PROJECTILE_HIT_RADIUS_Z) {
+      // Check if the ray's current z intersects the victim's body.
+      // Victim occupies z = [victim.z, victim.z + PLAYER_HEIGHT].
+      // Eye level = victim.z + 0.5. We add a small margin for hit slop.
+      const bodyBottom = victim.z - 0.05;
+      const bodyTop    = victim.z + PLAYER_HEIGHT + 0.05;
+      if (rayZ >= bodyBottom && rayZ <= bodyTop) {
         return victimId;
       }
     }
@@ -306,6 +317,15 @@ function broadcastAll(obj) {
     }
   });
 }
+
+function broadcastExcept(excludeWs, obj) {
+  const msg = JSON.stringify(obj);
+  wss.clients.forEach((c) => {
+    if (c !== excludeWs && c.readyState === WebSocket.OPEN) {
+      try { c.send(msg); } catch {}
+    }
+  });
+}
  
 function broadcastChat(name, message) { broadcastAll({ type: "chat", name, message }); }
 function broadcastChatImage(name, imageData) { broadcastAll({ type: "chatImage", name, imageData }); }
@@ -373,7 +393,12 @@ wss.on("connection", (ws) => {
     }
  
     if (data.type === "setSprite") {
-      players[id].sprite = String(data.sprite || "").slice(0, 2048);
+      const rawSprite = String(data.sprite || "");
+      // Allow large data URLs for base64 custom images (up to ~200 KB)
+      if (rawSprite.length > 200_000) return;
+      // Allow http/https URLs or data: URLs only
+      if (!rawSprite.startsWith("http") && !rawSprite.startsWith("data:image/") && rawSprite !== "") return;
+      players[id].sprite = rawSprite;
       markDirty();
       return;
     }

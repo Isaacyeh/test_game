@@ -1,4 +1,4 @@
-import { FOV, JUMP_SCALE, MAX_HEALTH } from "../constant.js";
+import { FOV, JUMP_SCALE, MAX_HEALTH, PROJECTILE_SPEED } from "../constant.js";
 import { castRay } from "./castRay.js";
 import { drawMinimap } from "./minimap.js";
 import { getState, respawn } from "../player.js";
@@ -6,6 +6,32 @@ import { getCrosshairOptions } from "../crosshair.js";
 
 // Cache for player sprite images
 const playerImages = new Map(); // id -> { img, url }
+
+// ── Remote projectile simulation ──────────────────────────────────────────────
+// When the server broadcasts a "bulletFired" event (from another player),
+// we simulate the tracer locally so it's visible at 60fps even though
+// network updates come at only 20Hz.
+const remoteTracers = []; // { x, y, z, vx, vy, vz, ttl, originX, originY, endX, endY }
+
+export function addRemoteTracer(data) {
+  // data: { x, y, z, vx, vy, vz, endX, endY, endZ }
+  if (!Number.isFinite(data.x) || !Number.isFinite(data.y)) return;
+  const totalDist = Math.hypot((data.endX||data.x) - data.x, (data.endY||data.y) - data.y);
+  const travelFrames = Math.max(1, Math.round(totalDist / PROJECTILE_SPEED));
+  remoteTracers.push({
+    x:       data.x,
+    y:       data.y,
+    z:       data.z || 0,
+    vx:      data.vx || 0,
+    vy:      data.vy || 0,
+    vz:      data.vz || 0,
+    ttl:     travelFrames + 5, // a few extra frames of visibility
+    originX: data.x,
+    originY: data.y,
+    endX:    data.endX || data.x,
+    endY:    data.endY || data.y,
+  });
+}
 
 // Set of sprite URLs that should be compressed to 0.5 aspect ratio
 const compressedSprites = new Set();
@@ -316,9 +342,11 @@ export function render(canvas, ctx) {
   const {
     player,
     z,
+    pitch,
     others,
     myId,
     projectiles,
+    bulletHoles,
     health,
     isDead,
     deathTimer,
@@ -329,7 +357,9 @@ export function render(canvas, ctx) {
 
   const rays = canvas.width;
   const jumpOffset = z * JUMP_SCALE;
-  const horizon = canvas.height / 2 + jumpOffset;
+  // Pitch offset: tan(pitch) scales the visual horizon shift correctly
+  const pitchOffset = Math.tan(pitch || 0) * canvas.height * 0.5;
+  const horizon = canvas.height / 2 + jumpOffset + pitchOffset;
 
   // Sky / floor
   ctx.fillStyle = "#222";
@@ -363,8 +393,61 @@ export function render(canvas, ctx) {
     prevTileX = tileX;
     prevTileY = tileY;
   }
-  // Collect all sprites (projectiles + remote players)
-  const allProjectiles = [...projectiles];
+
+  // ── Bullet holes on walls ─────────────────────────────────────────────────
+  if (bulletHoles && bulletHoles.length > 0) {
+    for (const bh of bulletHoles) {
+      const dx = bh.worldX - player.x;
+      const dy = bh.worldY - player.y;
+      const bhDist = Math.hypot(dx, dy);
+      if (bhDist < 0.01) continue;
+      const bhAngle = Math.atan2(dy, dx) - player.angle;
+      const norm = Math.atan2(Math.sin(bhAngle), Math.cos(bhAngle));
+      if (Math.abs(norm) > FOV / 2) continue;
+
+      const sx = (0.5 + norm / FOV) * canvas.width;
+      const di = Math.floor(sx);
+      if (di < 0 || di >= depth.length) continue;
+      // Only draw if the bullet hole is not behind a wall closer than it
+      const bhPerpDist = bhDist * Math.cos(norm);
+      if (depth[di] < bhPerpDist - 0.05) continue;
+
+      // Vertical position: worldZ is the height in world coords (0=floor, 1=ceiling)
+      // The wall column height on screen = canvas.height / bhPerpDist
+      const wallH = canvas.height / Math.max(bhPerpDist, 0.0001);
+      // Map worldZ [0,1] to screen Y: center of wall = horizon, top = horizon - wallH/2
+      // worldZ=0.5 → horizon (eye level), worldZ=1 → top of wall, worldZ=0 → bottom
+      const sy = horizon - (bh.worldZ - 0.5) * wallH;
+
+      const holeRadius = Math.max(2, wallH * 0.04);
+      ctx.save();
+      ctx.fillStyle = "#000000";
+      ctx.beginPath();
+      ctx.arc(sx, sy, holeRadius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "#444444";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  // ── Collect all sprites (projectiles + remote players) ────────────────────
+  // Advance and collect remote tracers (simulated locally at 60fps)
+  for (let i = remoteTracers.length - 1; i >= 0; i--) {
+    const t = remoteTracers[i];
+    t.x   += t.vx;
+    t.y   += t.vy;
+    t.z   += t.vz;
+    t.ttl--;
+    const dFromOrigin = Math.hypot(t.x - t.originX, t.y - t.originY);
+    const totalDist   = Math.hypot(t.endX - t.originX, t.endY - t.originY);
+    if (t.ttl <= 0 || dFromOrigin >= totalDist) {
+      remoteTracers.splice(i, 1);
+    }
+  }
+
+  const allProjectiles = [...projectiles, ...remoteTracers];
   for (const id in others) {
     if (id === myId) continue;
     allProjectiles.push(...(others[id].projectiles || []));
