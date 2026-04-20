@@ -8,7 +8,7 @@ import {
   setSprite,
   promptUsername,
 } from "./script_files/player.js";
-import { SPAWN_INVINCIBILITY_DURATION } from "./script_files/constant.js";
+import { SPAWN_INVINCIBILITY_DURATION, setFOV } from "./script_files/constant.js";
 import { setupChat } from "./script_files/chat.js";
 import { render, updateLeaderboard } from "./script_files/render/render.js";
 import { loadSprites } from "./UI/spriteMenu.js";
@@ -22,6 +22,32 @@ const mouse = { x: 0, y: 0, dx: 0, dy: 0, buttons: {} };
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 const canvas                = document.getElementById("game");
 const ctx                   = canvas.getContext("2d");
+ 
+// ── Canvas scaling — fills the window below the header, keeping 8:5 ratio ────
+// Logical resolution stays 800×500 so all game math is unchanged.
+// We only set canvas.style.width/height (CSS pixels) to scale visually.
+(function scaleCanvas() {
+  const ASPECT = 800 / 500; // 8:5
+  function resize() {
+    // Measure the header bar (<span> containing menu-button + title)
+    const header  = document.querySelector("body > span");
+    const headerH = header ? header.getBoundingClientRect().height : 0;
+    const winW    = window.innerWidth;
+    const winH    = window.innerHeight - headerH;
+    let w = winW;
+    let h = winW / ASPECT;
+    if (h > winH) { h = winH; w = winH * ASPECT; }
+    w = Math.floor(w); h = Math.floor(h);
+    canvas.style.width    = w + "px";
+    canvas.style.height   = h + "px";
+    canvas.style.position = "fixed";
+    canvas.style.left     = Math.floor((winW - w) / 2) + "px";
+    canvas.style.top      = Math.floor(headerH + (winH - h) / 2) + "px";
+    canvas.style.margin   = "0";
+  }
+  resize();
+  window.addEventListener("resize", resize);
+})();
 const menu                  = document.getElementById("menu");
 const customizationMenuLink = document.getElementById("customizationMenuLink");
 const customizationOverlay  = document.getElementById("customizationOverlay");
@@ -60,21 +86,10 @@ function clearInputState() {
   mouse.buttons = {};
 }
  
-function isCustomizationOpen() {
-  return !customizationOverlay.classList.contains("hidden");
-}
- 
-function isKeybindsOpen() {
-  return !keybindsOverlay.classList.contains("hidden");
-}
- 
-function isSettingsOpen() {
-  return !settingsOverlay.classList.contains("hidden");
-}
- 
-function isAnyMenuOpen() {
-  return isCustomizationOpen() || isKeybindsOpen() || isSettingsOpen();
-}
+function isCustomizationOpen() { return !customizationOverlay.classList.contains("hidden"); }
+function isKeybindsOpen()      { return !keybindsOverlay.classList.contains("hidden"); }
+function isSettingsOpen()      { return !settingsOverlay.classList.contains("hidden"); }
+function isAnyMenuOpen()       { return isCustomizationOpen() || isKeybindsOpen() || isSettingsOpen(); }
  
 let _prevMenuOpen = false;
 function syncMenuControlState() {
@@ -98,7 +113,7 @@ window.addEventListener("mousemove", (e) => {
 });
  
 window.addEventListener("keydown", (e) => {
-  if (e.key === "Tab") return; // Tab handled in render.js, don't block it
+  if (e.key === "Tab") return;
   if (isAnyMenuOpen()) return;
   keys[e.key] = true;
 });
@@ -124,15 +139,47 @@ canvas.addEventListener("click", () => {
 function updateSkinPreview(url) {
   const preview = document.getElementById("skinPreviewImg");
   if (!preview) return;
-  if (url) {
-    preview.src = url;
-    preview.style.display = "block";
-  } else {
-    preview.style.display = "none";
-  }
+  if (url) { preview.src = url; preview.style.display = "block"; }
+  else      { preview.style.display = "none"; }
 }
  
-// ── Build skin section inside customization overlay ───────────────────────────
+// ── FOV slider ────────────────────────────────────────────────────────────────
+let fovSliderBuilt = false;
+function buildFOVSlider() {
+  if (fovSliderBuilt) return;
+  fovSliderBuilt = true;
+ 
+  const overlayWindow  = customizationOverlay.querySelector(".overlay-window");
+  const firstFieldGroup = overlayWindow.querySelector(".field-group");
+ 
+  const section = document.createElement("div");
+  section.id = "fovSliderSection";
+  section.innerHTML = `
+    <div class="field-group" style="margin-bottom:14px;">
+      <label for="fovSliderInput" style="display:flex;justify-content:space-between;">
+        <span>Field of View</span>
+        <span id="fovSliderValue" style="color:lightslategray;font-weight:bold;">60°</span>
+      </label>
+      <input id="fovSliderInput" type="range" min="40" max="120" step="1" value="60"
+             style="width:100%;margin-top:6px;" />
+    </div>
+    <hr style="border-color:#444;margin:0 0 14px;">
+  `;
+ 
+  // Insert before the crosshair section
+  overlayWindow.insertBefore(section, firstFieldGroup);
+ 
+  const slider = document.getElementById("fovSliderInput");
+  const label  = document.getElementById("fovSliderValue");
+ 
+  slider.addEventListener("input", () => {
+    const deg = Number(slider.value);
+    label.textContent = `${deg}°`;
+    setFOV(deg * (Math.PI / 180));
+  });
+}
+ 
+// ── Build skin section ────────────────────────────────────────────────────────
 async function buildSkinSection() {
   const container = document.getElementById("skinSection");
   if (!container) return;
@@ -142,7 +189,6 @@ async function buildSkinSection() {
   container.innerHTML = `
     <hr style="border-color:#444; margin: 14px 0;">
     <h3 style="color: lightslategray; margin: 0 0 10px;">Character Skin</h3>
- 
     <div class="field-group">
       <label for="skinPresetSelect">Preset skins</label>
       <select id="skinPresetSelect" style="
@@ -153,12 +199,10 @@ async function buildSkinSection() {
         ${spritesData.map((s) => `<option value="${s.url}">${s.name}</option>`).join("")}
       </select>
     </div>
- 
     <div class="field-group" style="margin-top:10px;">
       <label for="skinUploadInput">Or upload a custom image</label>
       <input id="skinUploadInput" type="file" accept="image/*" />
     </div>
- 
     <div style="margin-top:10px; display:flex; align-items:center; gap:12px;">
       <img id="skinPreviewImg" src="" alt="Skin preview" style="
         display:none; width:64px; height:64px; object-fit:contain;
@@ -168,10 +212,9 @@ async function buildSkinSection() {
     </div>
   `;
  
-  const presetSelect   = document.getElementById("skinPresetSelect");
-  const skinUpload     = document.getElementById("skinUploadInput");
-  const skinPreviewImg = document.getElementById("skinPreviewImg");
-  const skinLabel      = document.getElementById("skinPreviewLabel");
+  const presetSelect = document.getElementById("skinPresetSelect");
+  const skinUpload   = document.getElementById("skinUploadInput");
+  const skinLabel    = document.getElementById("skinPreviewLabel");
  
   const currentSprite = getState().sprite;
   const match = spritesData.find((s) => s.url === currentSprite);
@@ -196,17 +239,31 @@ async function buildSkinSection() {
   skinUpload.addEventListener("change", (e) => {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
-    if (pendingSkinBlob) { URL.revokeObjectURL(pendingSkinBlob); pendingSkinBlob = null; }
-    pendingSkinBlob = URL.createObjectURL(file);
-    pendingSkinUrl = pendingSkinBlob;
-    presetSelect.value = "";
-    updateSkinPreview(pendingSkinBlob);
-    skinLabel.textContent = file.name;
+    // Use FileReader to get a base64 data URL instead of a blob URL.
+    // Blob URLs only work in the tab that created them; if we sent a blob URL
+    // to the server, other players' browsers couldn't load it (different origin).
+    // Base64 data URLs work everywhere and can be broadcast over WebSocket.
+    if (file.size > 2_000_000) {
+      alert("Image too large — please upload something under 2 MB.");
+      skinUpload.value = "";
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result;
+      if (pendingSkinBlob) { URL.revokeObjectURL(pendingSkinBlob); pendingSkinBlob = null; }
+      pendingSkinUrl = dataUrl;
+      presetSelect.value = "";
+      updateSkinPreview(dataUrl);
+      skinLabel.textContent = file.name;
+    };
+    reader.readAsDataURL(file);
   });
 }
  
 // ── Customization overlay ─────────────────────────────────────────────────────
 function openCustomizationOverlay() {
+  buildFOVSlider(); // inject once, idempotent
   customizationOverlay.classList.remove("hidden");
   customizationOverlay.setAttribute("aria-hidden", "false");
   crosshairOpacityInput.value = String(appliedCrosshairOpacity);
@@ -227,8 +284,7 @@ function closeCustomizationOverlay() {
 }
  
 customizationMenuLink.addEventListener("click", (e) => {
-  e.preventDefault();
-  e.stopPropagation();
+  e.preventDefault(); e.stopPropagation();
   menu.classList.add("hidden");
   openCustomizationOverlay();
 });
@@ -244,10 +300,7 @@ crosshairOpacityInput.addEventListener("input", (e) => {
 crosshairImageInput.addEventListener("change", (e) => {
   const file = e.target.files && e.target.files[0];
   if (!file) return;
-  if (pendingCrosshairBlobUrl) {
-    URL.revokeObjectURL(pendingCrosshairBlobUrl);
-    pendingCrosshairBlobUrl = null;
-  }
+  if (pendingCrosshairBlobUrl) { URL.revokeObjectURL(pendingCrosshairBlobUrl); pendingCrosshairBlobUrl = null; }
   pendingCrosshairBlobUrl = URL.createObjectURL(file);
   pendingCrosshairImage   = pendingCrosshairBlobUrl;
 });
@@ -260,11 +313,7 @@ confirmCustomization.addEventListener("click", () => {
   appliedCrosshairOpacity = pendingCrosshairOpacity;
   appliedCrosshairBlobUrl = pendingCrosshairBlobUrl;
   setCrosshairOptions({ opacity: appliedCrosshairOpacity, imageSrc: appliedCrosshairImage });
- 
-  if (pendingSkinUrl) {
-    setSprite(pendingSkinUrl);
-  }
- 
+  if (pendingSkinUrl) setSprite(pendingSkinUrl);
   closeCustomizationOverlay();
 });
  
@@ -272,57 +321,43 @@ confirmCustomization.addEventListener("click", () => {
 function openKeybindsOverlay() {
   keybindsOverlay.classList.remove("hidden");
   keybindsOverlay.setAttribute("aria-hidden", "false");
-  syncMenuControlState();
-  clearInputState();
+  syncMenuControlState(); clearInputState();
   if (document.pointerLockElement === canvas) document.exitPointerLock();
 }
- 
 function closeKeybindsOverlay() {
   keybindsOverlay.classList.add("hidden");
   keybindsOverlay.setAttribute("aria-hidden", "true");
-  syncMenuControlState();
-  clearInputState();
+  syncMenuControlState(); clearInputState();
 }
- 
 keybindsMenuLink.addEventListener("click", (e) => {
-  e.preventDefault();
-  e.stopPropagation();
+  e.preventDefault(); e.stopPropagation();
   menu.classList.add("hidden");
   openKeybindsOverlay();
 });
- 
 keybindsOverlay.addEventListener("click", (e) => {
   if (e.target === keybindsOverlay) closeKeybindsOverlay();
 });
- 
 initKeybindMenu(closeKeybindsOverlay);
  
-// ── Settings overlay (debug toggles) ─────────────────────────────────────────
+// ── Settings overlay ──────────────────────────────────────────────────────────
 function openSettingsOverlay() {
   settingsOverlay.classList.remove("hidden");
   settingsOverlay.setAttribute("aria-hidden", "false");
-  syncMenuControlState();
-  clearInputState();
+  syncMenuControlState(); clearInputState();
   if (document.pointerLockElement === canvas) document.exitPointerLock();
 }
- 
 function closeSettingsOverlay() {
   settingsOverlay.classList.add("hidden");
   settingsOverlay.setAttribute("aria-hidden", "true");
-  syncMenuControlState();
-  clearInputState();
+  syncMenuControlState(); clearInputState();
 }
- 
 settingsMenuLink.addEventListener("click", (e) => {
-  e.preventDefault();
-  e.stopPropagation();
+  e.preventDefault(); e.stopPropagation();
   menu.classList.add("hidden");
   openSettingsOverlay();
 });
- 
 closeSettings.addEventListener("click", closeSettingsOverlay);
 closeSettings.addEventListener("pointerdown", (e) => e.preventDefault());
- 
 settingsOverlay.addEventListener("click", (e) => {
   if (e.target === settingsOverlay) closeSettingsOverlay();
 });
@@ -331,9 +366,7 @@ document.querySelectorAll("[data-debug-key]").forEach((checkbox) => {
   const key = checkbox.dataset.debugKey;
   if (!debugToggles[key]) return;
   checkbox.checked = debugToggles[key].enabled;
-  checkbox.addEventListener("change", () => {
-    debugToggles[key].enabled = checkbox.checked;
-  });
+  checkbox.addEventListener("change", () => { debugToggles[key].enabled = checkbox.checked; });
 });
  
 // ── Chat refs ─────────────────────────────────────────────────────────────────
@@ -341,7 +374,7 @@ const chat      = document.getElementById("chat");
 const chatInput = document.getElementById("chatInput");
 const sendBtn   = document.getElementById("sendBtn");
  
-// ── WebSocket + game init (with retry) ───────────────────────────────────────
+// ── WebSocket + game init ─────────────────────────────────────────────────────
 const loader = window.__loader || {
   setProgress:  () => {},
   setRetryInfo: () => {},
@@ -364,24 +397,18 @@ function connectWebSocket() {
     loader.setProgress(20, "Connecting to server...");
     loader.addStep("ws", "Connecting to game server...", "wait");
   } else {
-    loader.setProgress(
-      Math.min(20 + retryCount * 7, 75),
-      `Attempt ${retryCount + 1} of ${WS_MAX_RETRIES}...`
-    );
+    loader.setProgress(Math.min(20 + retryCount * 7, 75), `Attempt ${retryCount + 1} of ${WS_MAX_RETRIES}...`);
     loader.updateStep("ws", "wait", `Retrying connection... (attempt ${retryCount + 1}/${WS_MAX_RETRIES})`);
   }
  
   const wsProtocol = location.protocol === "https:" ? "wss://" : "ws://";
   let ws;
- 
   try {
     ws = new WebSocket(wsProtocol + location.host);
   } catch (err) {
     loader.updateStep("ws", "fail", `WebSocket creation failed: ${err.message}`);
-    loader.showError(
-      `Failed to create WebSocket connection.\n${err.message}`,
-      () => { retryCount = 0; connectWebSocket(); }
-    );
+    loader.showError(`Failed to create WebSocket connection.\n${err.message}`,
+      () => { retryCount = 0; connectWebSocket(); });
     return;
   }
  
@@ -403,20 +430,14 @@ function connectWebSocket() {
       initPlayer(keys, ws, mouse);
     } catch (err) {
       loader.updateStep("init", "fail", `Player init failed: ${err.message}`);
-      loader.showError(
-        `Game initialization error:\n${err.message}\n\nTry refreshing the page.`,
-        () => location.reload()
-      );
+      loader.showError(`Game initialization error:\n${err.message}\n\nTry refreshing the page.`,
+        () => location.reload());
       return;
     }
  
     ws.addEventListener("message", (e) => {
       let data;
-      try {
-        data = JSON.parse(e.data);
-      } catch {
-        return;
-      }
+      try { data = JSON.parse(e.data); } catch { return; }
       if (data.type === "init") {
         setMyId(data.id);
         loader.updateStep("init", "ok", "Player initialized — ID assigned");
@@ -425,10 +446,7 @@ function connectWebSocket() {
       }
       if (data.type === "players") {
         setOthers(data.players);
-        // Feed leaderboard data into renderer
-        if (data.leaderboard) {
-          updateLeaderboard(data.leaderboard);
-        }
+        if (data.leaderboard) updateLeaderboard(data.leaderboard);
         if (!window.__assetsReady) {
           window.__assetsReady = true;
           loader.updateStep("assets", "ok", "Sprites & map data ready");
@@ -455,22 +473,13 @@ function connectWebSocket() {
  
     loader.dismiss(() => {
       let username;
-      try {
-        username = promptUsername();
-      } catch (err) {
-        username = "Anonymous";
-      }
- 
-      try {
-        setupChat(ws, chatInput, chat, sendBtn, username);
-      } catch (err) {
-        console.warn("Chat setup failed:", err);
-      }
+      try { username = promptUsername(); } catch { username = "Anonymous"; }
+      try { setupChat(ws, chatInput, chat, sendBtn, username); } catch (err) { console.warn("Chat setup failed:", err); }
  
       const { sprite } = getState();
       if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: "setName",   name: username }));
-        ws.send(JSON.stringify({ type: "setSprite", sprite }));
+        ws.send(JSON.stringify({ type: "setName",      name: username }));
+        ws.send(JSON.stringify({ type: "setSprite",    sprite }));
         ws.send(JSON.stringify({ type: "initialSpawn" }));
       }
  
@@ -481,18 +490,13 @@ function connectWebSocket() {
   ws.addEventListener("error", () => {
     clearTimeout(openTimer);
     loader.updateStep("ws", "fail",
-      retryCount < WS_MAX_RETRIES
-        ? "Connection error — will retry..."
-        : "Connection error — max retries reached"
-    );
+      retryCount < WS_MAX_RETRIES ? "Connection error — will retry..." : "Connection error — max retries reached");
   });
  
   ws.addEventListener("close", (e) => {
     clearTimeout(openTimer);
     if (gameStarted) return;
- 
     const reason = e.reason ? ` (${e.reason})` : (e.code ? ` [code ${e.code}]` : "");
- 
     if (retryCount >= WS_MAX_RETRIES) {
       loader.updateStep("ws", "fail", `Could not connect after ${WS_MAX_RETRIES} attempts${reason}`);
       loader.showError(
@@ -509,10 +513,7 @@ function connectWebSocket() {
     const delay = Math.min(WS_RETRY_BASE_MS * retryCount, WS_RETRY_MAX_MS);
     let secsLeft = Math.ceil(delay / 1000);
  
-    loader.setProgress(
-      Math.min(20 + retryCount * 7, 75),
-      `Retrying in ${secsLeft}s...`
-    );
+    loader.setProgress(Math.min(20 + retryCount * 7, 75), `Retrying in ${secsLeft}s...`);
     loader.updateStep("ws", "wait", `Retrying in ${secsLeft}s... (attempt ${retryCount + 1}/${WS_MAX_RETRIES})`);
  
     const tick = setInterval(() => {
@@ -530,9 +531,8 @@ function connectWebSocket() {
   });
 }
  
-// ── Kick off ──────────────────────────────────────────────────────────────────
 loader.setProgress(10, "Loading assets...");
-loader.addStep("dom", "Page & scripts loaded", "ok");
-loader.addStep("canvas", "Canvas context ready", "ok");
+loader.addStep("dom",    "Page & scripts loaded",  "ok");
+loader.addStep("canvas", "Canvas context ready",   "ok");
  
 connectWebSocket();

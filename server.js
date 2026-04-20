@@ -26,8 +26,8 @@ const PROJECTILE_HIT_RADIUS = PLAYER_RADIUS + PROJECTILE_RADIUS; // 0.225
 const PROJECTILE_HIT_RADIUS_Z = PLAYER_RADIUS + PROJECTILE_RADIUS;
 const MAX_HEALTH            = 1;
 const MAX_PROJECTILES_PER_PLAYER = 20;
-const TRACER_MAX_RANGE      = 18;   // must match client
-const RAY_STEP              = 0.05; // must be small enough to not skip players
+const TRACER_MAX_RANGE      = 18;
+const RAY_STEP              = 0.05;
 const SPAWN_INVINCIBILITY_MS = 5_000;
  
 const SPAWN = { x: 3, y: 17, angle: 0 };
@@ -151,7 +151,6 @@ function getGeometry(char) {
   return GEOMETRY[char] ?? null;
 }
  
-// Server-side solid wall check (mirrors client isWall but simplified for rays)
 function isSolidAt(x, y) {
   const tileX = Math.floor(x);
   const tileY = Math.floor(y);
@@ -160,14 +159,12 @@ function isSolidAt(x, y) {
   const geo = getGeometry(char);
   if (!geo || !geo.solid) return false;
  
-  // For pillars, check circle
   if (geo.type === "pillar") {
     const lx = x - tileX - 0.5;
     const ly = y - tileY - 0.5;
     const r  = geo.radius ?? 0.15;
     return lx * lx + ly * ly < r * r;
   }
-  // For diagonals, use same band test as client
   if (geo.type === "diagonal") {
     const lx = x - tileX;
     const ly = y - tileY;
@@ -175,24 +172,28 @@ function isSolidAt(x, y) {
     if (geo.slope === 1)  return Math.abs(lx + ly - 1) < MARGIN;
     else                  return Math.abs(lx - ly)      < MARGIN;
   }
-  // Full wall
   return true;
 }
  
 // ── Authoritative ray-based hit detection ─────────────────────────────────────
-// Steps along the ray, tests each player's cylinder at each step.
-// Returns the ID of the first player hit, or null.
-function rayCastHit(shooterId, originX, originY, originZ, angle) {
-  const dx   = Math.cos(angle) * RAY_STEP;
-  const dy   = Math.sin(angle) * RAY_STEP;
+// Now pitch-aware: the ray tracks z along its path so a pitched-up shot won't
+// hit a player that is below the aim line, and vice versa.
+function rayCastHit(shooterId, originX, originY, originZ, angle, pitch) {
+  const cosPitch = Math.cos(pitch || 0);
+  const sinPitch = Math.sin(pitch || 0);
+  const dx   = Math.cos(angle) * RAY_STEP * cosPitch;
+  const dy   = Math.sin(angle) * RAY_STEP * cosPitch;
+  const dz   = -sinPitch * RAY_STEP;          // z decreases when pitching down
   const maxSteps = Math.ceil(TRACER_MAX_RANGE / RAY_STEP);
  
   let x = originX;
   let y = originY;
+  let z = originZ;
  
   for (let i = 0; i < maxSteps; i++) {
     x += dx;
     y += dy;
+    z += dz;
  
     // Stop at solid wall
     if (isSolidAt(x, y)) {
@@ -208,10 +209,15 @@ function rayCastHit(shooterId, originX, originY, originZ, angle) {
       if (Date.now() < (victim.invincibleUntil || 0)) continue;
  
       const xyDist = Math.hypot(x - victim.x, y - victim.y);
-      // Z check: ray travels flat (same z as origin); compare to victim z
-      const zDist  = Math.abs(originZ - (victim.z || 0));
+      // Use the ray's current z (pitch-adjusted) vs victim's z (floor position).
+      // Victim occupies z range [victim.z, victim.z + 1] (one world unit tall).
+      // The ray hits if it passes through that vertical range.
+      const victimZ    = victim.z || 0;
+      const victimZTop = victimZ + 1.0;
+      const zInRange   = z >= victimZ - PROJECTILE_HIT_RADIUS_Z &&
+                         z <= victimZTop + PROJECTILE_HIT_RADIUS_Z;
  
-      if (xyDist <= PROJECTILE_HIT_RADIUS && zDist <= PROJECTILE_HIT_RADIUS_Z) {
+      if (xyDist <= PROJECTILE_HIT_RADIUS && zInRange) {
         return victimId;
       }
     }
@@ -221,13 +227,12 @@ function rayCastHit(shooterId, originX, originY, originZ, angle) {
 }
  
 function debugLog_server(msg) {
-  // Server-side console debug (off by default — uncomment if needed)
   // console.log("[server ray]", msg);
 }
  
 // ── State ─────────────────────────────────────────────────────────────────────
 const players     = {};
-const playerStats = {}; // id -> { kills, deaths }
+const playerStats = {};
  
 let broadcastDirty = false;
  
@@ -373,7 +378,7 @@ wss.on("connection", (ws) => {
     }
  
     if (data.type === "setSprite") {
-      players[id].sprite = String(data.sprite || "").slice(0, 2048);
+      players[id].sprite = String(data.sprite || "").slice(0, 2_000_000); // allow base64
       markDirty();
       return;
     }
@@ -417,9 +422,7 @@ wss.on("connection", (ws) => {
       return;
     }
  
-    // ── Raycast shot (NEW) ──────────────────────────────────────────────────
-    // Client sends this once per shot with the ray origin + angle.
-    // Server checks the ray against all players and walls authoritatively.
+    // ── Raycast shot ────────────────────────────────────────────────────────
     if (data.type === "shoot") {
       if (players[id].inMenu) return;
       if (players[id].health <= 0) return;
@@ -428,15 +431,14 @@ wss.on("connection", (ws) => {
       const originY = safeNum(data.y,     players[id].y,   0, 200);
       const originZ = safeNum(data.z,     players[id].z,   0, 10);
       const angle   = safeNum(data.angle, players[id].angle);
+      const pitch   = safeNum(data.pitch, 0, -Math.PI/2, Math.PI/2);
  
       // Verify the origin is near the server's known position (anti-cheat)
       const posDrift = Math.hypot(originX - players[id].x, originY - players[id].y);
-      if (posDrift > 2.0) {
-        // Origin is too far from server-known position — reject
-        return;
-      }
+      if (posDrift > 2.0) return;
  
-      const victimId = rayCastHit(id, originX, originY, originZ, angle);
+      // Pass pitch so the server ray tracks z correctly (no false hits above/below)
+      const victimId = rayCastHit(id, originX, originY, originZ, angle, pitch);
  
       if (victimId) {
         const victim    = players[victimId];
@@ -465,7 +467,6 @@ wss.on("connection", (ws) => {
       angle:   safeNum(data.angle, prev.angle),
       z:       safeNum(data.z,     prev.z,     0, 10),
       sneaking: Boolean(data.sneaking),
-      // Projectiles are visual-only now; server stores them just for relay
       projectiles: Array.isArray(data.projectiles)
         ? data.projectiles
             .slice(0, MAX_PROJECTILES_PER_PLAYER)

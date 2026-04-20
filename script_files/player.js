@@ -1,23 +1,31 @@
 import {
   PLAYER_RADIUS,
   MOVE_SPEED,
+  FOV,
   JUMP_VELOCITY,
   GRAVITY,
   MAX_JUMP,
   PROJECTILE_SPEED,
   PROJECTILE_LIFETIME,
   PROJECTILE_START_Z,
+  PROJECTILE_RADIUS,
+  TRACER_MAX_RANGE,
   MAX_HEALTH,
   HIT_DAMAGE,
   PROJECTILE_HIT_RADIUS,
   SPAWN_INVINCIBILITY_DURATION,
-  TRACER_MAX_RANGE,
+  PITCH_MAX,
+  PITCH_SPEED,
+  PITCH_MOUSE_SENS,
+  FIRE_RATE_FRAMES,
 } from "./constant.js";
 import { isWall, map, getGeometry } from "./map.js";
 import { debugLog } from "./debug.js";
 import { keybinds, isPressed, initKeyMouseRef } from "./keybindControls.js";
+import { addBulletHole } from "./render/render.js";
  
 const SPAWN = { x: 17, y: 7, angle: 0, sneaking: false };
+ 
 // Stamina constants
 const MAX_STAMINA = 1;
 const STAMINA_DRAIN = 0.005;
@@ -49,6 +57,8 @@ const state = {
   staminaCooldown: 0,
   isSprinting: false,
  
+  pitch: 0,   // vertical camera angle (radians, + = look down, - = look up)
+ 
   sprite: "https://www.clker.com/cliparts/a/4/1/d/1301963432622081819stick_figure%20(1).png",
   username: "",
 };
@@ -57,7 +67,6 @@ let keysRef = null;
 let wsRef = null;
 let mouseRef = null;
 let nextProjectileId = 1;
-let COOLDOWN = 10;
  
 export function initPlayer(keys, ws, mouse) {
   keysRef = keys;
@@ -146,6 +155,7 @@ export function respawn() {
   state.z = 0;
   state.zVel = 0;
   state.onGround = true;
+  state.pitch = 0;
  
   state.health = MAX_HEALTH;
   state.cooldown = 0;
@@ -165,36 +175,46 @@ export function respawn() {
 }
  
 // ── Raycast shot ──────────────────────────────────────────────────────────────
-// Steps along the ray in small increments. Returns the endpoint where the ray
-// hits a wall or reaches max range. Player hit detection is server-authoritative;
-// this is only used to determine the visual tracer endpoint.
-function raycastShot(originX, originY, angle) {
-  const STEP = 0.05; // world units per step — small enough to never skip a wall
+// Returns xy endpoint, world-z at impact, and surface type hit.
+function raycastShot(originX, originY, originZ, angle, pitch) {
+  const STEP = 0.05;
   const MAX_STEPS = Math.ceil(TRACER_MAX_RANGE / STEP);
-  const dx = Math.cos(angle) * STEP;
-  const dy = Math.sin(angle) * STEP;
+  const cosPitch = Math.cos(pitch);
+  const sinPitch = Math.sin(pitch);
+  const dx = Math.cos(angle) * STEP * cosPitch;
+  const dy = Math.sin(angle) * STEP * cosPitch;
+  const dz = -sinPitch * STEP;
  
-  let x = originX;
-  let y = originY;
+  let x = originX, y = originY, z = originZ;
  
   for (let i = 0; i < MAX_STEPS; i++) {
-    x += dx;
-    y += dy;
+    x += dx; y += dy; z += dz;
  
-    // Stop at solid wall
-    const tileX = Math.floor(x);
-    const tileY = Math.floor(y);
-    const char = map[tileY]?.[tileX];
+    if (z <= 0) return { x: x-dx*0.5, y: y-dy*0.5, z: 0,        hitWall: true, hitType: "floor"   };
+    if (z >= 1) return { x: x-dx*0.5, y: y-dy*0.5, z: 1,        hitWall: true, hitType: "ceiling" };
+ 
+    const char = map[Math.floor(y)]?.[Math.floor(x)];
     if (char) {
       const geo = getGeometry(char);
       if (geo && geo.solid) {
-        // Step back a tiny bit so the tracer stops just before the wall face
-        return { x: x - dx * 0.5, y: y - dy * 0.5, hitWall: true };
+        return { x: x-dx*0.5, y: y-dy*0.5, z: z-dz*0.5, hitWall: true, hitType: "wall" };
       }
     }
   }
+  return { x, y, z, hitWall: false, hitType: "none" };
+}
  
-  return { x, y, hitWall: false };
+// Returns true if any live other player is near (px,py,pz) — used to suppress
+// bullet holes when the shot hit a player instead of a wall behind them.
+function pointHitsPlayer(px, py, pz) {
+  for (const id in state.others) {
+    const p = state.others[id];
+    if (!p || p.health <= 0) continue;
+    const xyDist = Math.hypot(px - p.x, py - p.y);
+    const zDist  = Math.abs(pz - (p.z || 0));
+    if (xyDist <= PROJECTILE_HIT_RADIUS && zDist <= PROJECTILE_HIT_RADIUS) return true;
+  }
+  return false;
 }
  
 function canMove(x, y) {
@@ -228,16 +248,21 @@ export function update() {
   if (!blockControls && isPressed(keybinds.turnLeft))  player.angle -= 0.04;
   if (!blockControls && isPressed(keybinds.turnRight)) player.angle += 0.04;
  
-  let moveX = 0;
-  let moveY = 0;
+  // Vertical look (pitch) — arrow up / down
+  if (!blockControls && isPressed("ArrowUp")) {
+    state.pitch = Math.max(-PITCH_MAX, state.pitch - PITCH_SPEED);
+  }
+  if (!blockControls && isPressed("ArrowDown")) {
+    state.pitch = Math.min(PITCH_MAX, state.pitch + PITCH_SPEED);
+  }
+ 
+  let moveX = 0, moveY = 0;
  
   // Sneak + Sprint
   state.player.sneaking = !blockControls && isPressed(keybinds.sneak);
  
   const isTryingToSprint =
-    !blockControls &&
-    isPressed(keybinds.sprint) &&
-    !state.player.sneaking;
+    !blockControls && isPressed(keybinds.sprint) && !state.player.sneaking;
  
   if (isTryingToSprint && state.staminaCooldown === 0 && state.stamina > 0) {
     state.isSprinting = true;
@@ -248,15 +273,12 @@ export function update() {
     }
   } else {
     state.isSprinting = false;
-    if (state.staminaCooldown > 0) {
-      state.staminaCooldown--;
-    } else {
-      state.stamina = Math.min(MAX_STAMINA, state.stamina + STAMINA_REGEN);
-    }
+    if (state.staminaCooldown > 0) state.staminaCooldown--;
+    else state.stamina = Math.min(MAX_STAMINA, state.stamina + STAMINA_REGEN);
   }
  
-  const sneakSpeed  = state.player.sneaking ? 0.4 : 1;
-  const sprintSpeed = state.isSprinting ? SPRINT_SPEED_MULT : 1;
+  const sneakSpeed    = state.player.sneaking ? 0.4 : 1;
+  const sprintSpeed   = state.isSprinting ? SPRINT_SPEED_MULT : 1;
   const effectiveSpeed = sneakSpeed * sprintSpeed;
  
   if (!blockControls && isPressed(keybinds.moveForward)) {
@@ -276,41 +298,32 @@ export function update() {
     moveY += Math.sin(player.angle + Math.PI / 2) * MOVE_SPEED * effectiveSpeed;
   }
  
-  const nx = player.x + moveX;
-  const ny = player.y + moveY;
- 
-  if (canMove(nx, ny)) {
-    player.x = nx;
-    player.y = ny;
-  } else {
-    if (canMove(nx, player.y)) player.x = nx;
-    if (canMove(player.x, ny)) player.y = ny;
-  }
+  const nx = player.x + moveX, ny = player.y + moveY;
+  if (canMove(nx, ny))            { player.x = nx; player.y = ny; }
+  else if (canMove(nx, player.y))   player.x = nx;
+  else if (canMove(player.x, ny))   player.y = ny;
  
   // Jump
   if (!blockControls && isPressed(keybinds.jump) && state.onGround) {
     state.zVel = JUMP_VELOCITY;
     state.onGround = false;
   }
- 
   state.zVel -= GRAVITY;
   state.z    += state.zVel;
- 
-  if (state.z <= 0) {
-    state.z    = 0;
-    state.zVel = 0;
-    state.onGround = true;
-  }
+  if (state.z <= 0) { state.z = 0; state.zVel = 0; state.onGround = true; }
  
   // Mouse look
-  const mouseMoveX = mouseRef.dx || 0;
-  if (!blockControls && mouseMoveX !== 0) {
-    player.angle += mouseMoveX * 0.006;
+  if (!blockControls) {
+    if (mouseRef.dx) player.angle += mouseRef.dx * 0.006;
+    if (mouseRef.dy) {
+      state.pitch = Math.max(-PITCH_MAX, Math.min(PITCH_MAX,
+        state.pitch + mouseRef.dy * PITCH_MOUSE_SENS));
+    }
   }
   mouseRef.dx = 0;
   mouseRef.dy = 0;
  
-  // ── Shooting — raycast on trigger ─────────────────────────────────────────
+  // ── Shooting ──────────────────────────────────────────────────────────────
   const primaryHeld   = !blockControls && isPressed(keybinds.shoot);
   const secondaryHeld = !blockControls && isPressed(keybinds.secondaryShoot);
  
@@ -319,76 +332,89 @@ export function update() {
   if ((primaryHeld || secondaryHeld) && state.cooldown === 0) {
     const pid = nextProjectileId++;
  
-    // Cast a ray from shooter's position along their aim angle
-    const endpoint = raycastShot(player.x, player.y, player.angle);
+    // Visual bullet origin: eye/torso height
+    const bulletOriginZ = state.z + PROJECTILE_START_Z;
  
-    // Total distance from origin to endpoint
-    const totalDist = Math.hypot(endpoint.x - player.x, endpoint.y - player.y);
+    const endpoint = raycastShot(
+      player.x, player.y, bulletOriginZ,
+      player.angle, state.pitch
+    );
  
-    // The tracer starts AT the player and travels to the endpoint.
-    // vx/vy are the per-frame velocity components so the tracer arrives
-    // at the endpoint in exactly `totalFrames` frames.
+    const totalDist    = Math.hypot(endpoint.x - player.x, endpoint.y - player.y);
     const travelFrames = Math.max(1, Math.round(totalDist / PROJECTILE_SPEED));
+    const cosPitch     = Math.cos(state.pitch);
+    const sinPitch     = Math.sin(state.pitch);
  
     state.projectiles.push({
       id:          pid,
-      x:           player.x,            // current tracer position
+      x:           player.x,
       y:           player.y,
-      z:           state.z + PROJECTILE_START_Z,
-      originX:     player.x,            // fire origin (for server ray)
+      z:           bulletOriginZ,
+      originX:     player.x,
       originY:     player.y,
-      originZ:     state.z + PROJECTILE_START_Z,
-      angle:       player.angle,        // aim angle (for server ray)
-      endX:        endpoint.x,          // wall/range endpoint
+      originZ:     bulletOriginZ,
+      angle:       player.angle,
+      pitch:       state.pitch,
+      endX:        endpoint.x,
       endY:        endpoint.y,
-      vx:          Math.cos(player.angle) * PROJECTILE_SPEED,
-      vy:          Math.sin(player.angle) * PROJECTILE_SPEED,
-      ttl:         travelFrames,        // dies when it reaches endpoint
+      endZ:        endpoint.z,
+      vx:          Math.cos(player.angle) * PROJECTILE_SPEED * cosPitch,
+      vy:          Math.sin(player.angle) * PROJECTILE_SPEED * cosPitch,
+      vz:          -sinPitch * PROJECTILE_SPEED,
+      ttl:         travelFrames,
       totalFrames: travelFrames,
       hitWall:     endpoint.hitWall,
+      hitType:     endpoint.hitType,
     });
  
-    debugLog("projectileFire", `FIRED id=${pid} range=${totalDist.toFixed(2)} frames=${travelFrames}`);
+    // Only spawn a bullet hole if no player is at the endpoint
+    if (endpoint.hitWall && endpoint.hitType !== "none") {
+      if (!pointHitsPlayer(endpoint.x, endpoint.y, endpoint.z)) {
+        addBulletHole(endpoint.x, endpoint.y, endpoint.z, bulletOriginZ, endpoint.hitType);
+      }
+    }
  
-    state.cooldown = COOLDOWN;
+    debugLog("projectileFire",
+      `FIRED id=${pid} range=${totalDist.toFixed(2)} frames=${travelFrames} ` +
+      `pitch=${state.pitch.toFixed(3)} type=${endpoint.hitType}`);
  
-    // Tell server about the ray (not the moving projectile)
-    // Server does its own authoritative hit detection using the ray
+    // FIRE_RATE_FRAMES from constant.js controls shots-per-second
+    state.cooldown = FIRE_RATE_FRAMES;
+ 
+    // Send floor-relative z to server so the Z hit check passes.
+    // The server's rayCastHit now tracks z along the ray using pitch,
+    // so it won't falsely hit players that are above/below the aim line.
     if (wsRef.readyState === WebSocket.OPEN) {
       wsRef.send(JSON.stringify({
         type:    "shoot",
         id:      pid,
         x:       player.x,
         y:       player.y,
-        z:       state.z + PROJECTILE_START_Z,
+        z:       state.z,       // floor-relative, NOT +PROJECTILE_START_Z
         angle:   player.angle,
+        pitch:   state.pitch,
       }));
     }
   }
  
   // ── Advance visual tracers ────────────────────────────────────────────────
   state.projectiles = state.projectiles.filter((p) => {
-    p.x   += p.vx;
-    p.y   += p.vy;
+    p.x += p.vx; p.y += p.vy; p.z += p.vz;
     p.ttl--;
- 
-    // Kill tracer if it has reached (or passed) its endpoint
     const dFromOrigin = Math.hypot(p.x - p.originX, p.y - p.originY);
     const totalDist   = Math.hypot(p.endX - p.originX, p.endY - p.originY);
     if (dFromOrigin >= totalDist) return false;
- 
     return p.ttl > 0;
   });
  
   // ── Network: send position + visual tracers ───────────────────────────────
-  // We still send projectiles so other clients can see the tracers.
-  // The server ignores these for hit detection (it uses "shoot" rays instead).
   if (wsRef.readyState === WebSocket.OPEN) {
     wsRef.send(JSON.stringify({
-      x:          player.x,
-      y:          player.y,
-      angle:      player.angle,
-      z:          state.z,
+      x:           player.x,
+      y:           player.y,
+      angle:       player.angle,
+      z:           state.z,
+      pitch:       state.pitch,
       projectiles: state.projectiles.map((p) => ({
         id:  p.id,
         x:   p.x,
@@ -396,6 +422,7 @@ export function update() {
         z:   p.z,
         vx:  p.vx,
         vy:  p.vy,
+        vz:  p.vz,
         ttl: p.ttl,
       })),
       health:    state.health,
