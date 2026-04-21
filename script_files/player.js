@@ -19,11 +19,10 @@ import { keybinds, isPressed, initKeyMouseRef } from "./keybindControls.js";
  
 // spwan locations
 const SPAWNS = [
-  { x: 15, y: 9, angle: 0, sneaking: false },
-  { x: 5,  y: 5, angle: 0, sneaking: false },
-  { x: 20, y: 12, angle: Math.PI / 2, sneaking: false },
-  { x: 8,  y: 18, angle: Math.PI, sneaking: false },
-  { x: 25, y: 6, angle: -Math.PI / 2, sneaking: false }
+  { x: 14, y: 9, angle: Math.PI / 2, sneaking: false },
+  { x: 41, y: 15, angle: Math.PI, sneaking: false },
+  { x: 6, y: 21, angle: Math.PI, sneaking: false },
+  { x: 30, y: 28, angle: Math.PI, sneaking: false },
 ];
 
 const SPAWN = getRandomSpawn();
