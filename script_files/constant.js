@@ -9,19 +9,10 @@ export const JUMP_SCALE = 200;
 //minimap constants
 export const MINIMAP_SCALE = 10;
 export const MINIMAP_PADDING = 10;
-//projectile constants
-export const PROJECTILE_SPEED = 2;          // Visual tracer speed (world units/frame)
-export const PROJECTILE_LIFETIME = 60;         // Tracer lives 60 frames max (it dies at wall/range)
-export const PROJECTILE_START_Z = 0.0;
-export const PROJECTILE_RADIUS = 0.0125;        // Visual only — hit detection is ray-based
-export const TRACER_MAX_RANGE = 18;   
-export const SHOOT_COOLDOWN = 10;          // Cooldown between shots in frames
+
 //health constants
-export const MAX_HEALTH = 100;
-export const HIT_DAMAGE = 10;
+export const MAX_HEALTH = 1;
 //invincibility constants
 export const SPAWN_INVINCIBILITY_DURATION = 300; // 5 seconds at 60fps
-// Ray-based hit detection radius (used server-side too)
-export const PROJECTILE_HIT_RADIUS = PLAYER_RADIUS + PROJECTILE_RADIUS; // 0.225
-export const PROJECTILE_HIT_RADIUS_Z = PLAYER_RADIUS + PROJECTILE_RADIUS; // 0.225
+
  

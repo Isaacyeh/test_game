@@ -1,3 +1,19 @@
+import {PLAYER_RADIUS} from "./constant.js";
+
+//projectile constants
+export const PROJECTILE_SPEED = 2;          // Visual tracer speed (world units/frame)
+export const PROJECTILE_LIFETIME = 60;         // Tracer lives 60 frames max (it dies at wall/range)
+export const PROJECTILE_START_Z = 0.0;
+export const PROJECTILE_RADIUS = 0.0125;        // Visual only — hit detection is ray-based
+export const TRACER_MAX_RANGE = 18;   
+export const SHOOT_COOLDOWN = 10;  // Cooldown between shots in frames
+
+export const HIT_DAMAGE = 10;
+
+// Ray-based hit detection radius (used server-side too)
+export const PROJECTILE_HIT_RADIUS = PLAYER_RADIUS + PROJECTILE_RADIUS; // 0.225
+export const PROJECTILE_HIT_RADIUS_Z = PLAYER_RADIUS + PROJECTILE_RADIUS; // 0.225
+
 // script_files/guns.js
 export const GUNS = {
   rifle: {

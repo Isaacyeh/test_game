@@ -4,16 +4,20 @@ import {
   JUMP_VELOCITY,
   GRAVITY,
   MAX_JUMP,
+  MAX_HEALTH,
+  SPAWN_INVINCIBILITY_DURATION,
+  
+} from "./constant.js";
+import {
+  GUNS,
   PROJECTILE_SPEED,
   PROJECTILE_LIFETIME,
   PROJECTILE_START_Z,
-  MAX_HEALTH,
   HIT_DAMAGE,
   PROJECTILE_HIT_RADIUS,
-  SPAWN_INVINCIBILITY_DURATION,
   TRACER_MAX_RANGE,
   SHOOT_COOLDOWN,
-} from "./constant.js";
+} from "./guns.js"
 import { isWall, map, getGeometry } from "./map.js";
 import { debugLog } from "./debug.js";
 import { keybinds, isPressed, initKeyMouseRef } from "./keybindControls.js";
