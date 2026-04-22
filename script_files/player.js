@@ -1,8 +1,6 @@
 import {
   PLAYER_RADIUS,
   MOVE_SPEED,
-  FOV,
-  JUMP_SCALE,
   JUMP_VELOCITY,
   GRAVITY,
   MAX_JUMP,
@@ -13,7 +11,6 @@ import {
   TRACER_MAX_RANGE,
   MAX_HEALTH,
   HIT_DAMAGE,
-  PROJECTILE_HIT_RADIUS,
   SPAWN_INVINCIBILITY_DURATION,
   PITCH_MAX,
   PITCH_SPEED,
@@ -24,7 +21,6 @@ import {
 import { isWall, map, getGeometry } from "./map.js";
 import { debugLog } from "./debug.js";
 import { keybinds, isPressed, initKeyMouseRef } from "./keybindControls.js";
-import { addBulletHole } from "./render/render.js";
  
 const SPAWN = { x: 17, y: 7, angle: 0, sneaking: false };
  
@@ -205,19 +201,6 @@ function raycastShot(originX, originY, originZ, angle, pitch) {
   return { x, y, z, hitWall: false, hitType: "none" };
 }
  
-// Returns true if any live other player is near (px,py,pz) — used to suppress
-// bullet holes when the shot hit a player instead of a wall behind them.
-function pointHitsPlayer(px, py, pz) {
-  for (const id in state.others) {
-    const p = state.others[id];
-    if (!p || p.health <= 0) continue;
-    const xyDist = Math.hypot(px - p.x, py - p.y);
-    const zDist  = Math.abs(pz - (p.z || 0));
-    if (xyDist <= PROJECTILE_HIT_RADIUS && zDist <= PROJECTILE_HIT_RADIUS) return true;
-  }
-  return false;
-}
-
 function getCrosshairGamePosition() {
   const canvas = document.getElementById("game");
   if (!canvas) return null;
@@ -225,32 +208,6 @@ function getCrosshairGamePosition() {
     x: canvas.width / 2,
     y: canvas.height / 2,
   };
-}
-
-function getBulletHoleGamePosition(player, playerZ, pitch, endpoint, bulletOriginZ) {
-  const canvas = document.getElementById("game");
-  if (!canvas) return null;
-
-  const canvasW = canvas.width;
-  const canvasH = canvas.height;
-  const dx = endpoint.x - player.x;
-  const dy = endpoint.y - player.y;
-  const rawDist = Math.hypot(dx, dy);
-  if (rawDist < 0.0001) return null;
-
-  const angle = Math.atan2(dy, dx) - player.angle;
-  const norm = Math.atan2(Math.sin(angle), Math.cos(angle));
-  const sx = (0.5 + norm / FOV) * canvasW;
-
-  const perpDist = rawDist * Math.cos(norm);
-  if (perpDist < 0.0001) return null;
-
-  const wallH = canvasH / perpDist;
-  const horizon = canvasH / 2 + playerZ * JUMP_SCALE;
-  const pitchPixels = pitch * canvasH * PITCH_SCREEN_Y_SCALE;
-  const sy = horizon + (bulletOriginZ - endpoint.z) * wallH - pitchPixels;
-
-  return { x: sx, y: sy };
 }
  
 function canMove(x, y) {
@@ -403,33 +360,16 @@ export function update() {
       hitType:     endpoint.hitType,
     });
  
-    let bulletHolePlaced = false;
-
-    // Only spawn a bullet hole if no player is at the endpoint
-    if (endpoint.hitWall && endpoint.hitType !== "none") {
-      const blockedByPlayer = pointHitsPlayer(endpoint.x, endpoint.y, endpoint.z);
-      if (!blockedByPlayer) {
-        addBulletHole(endpoint.x, endpoint.y, endpoint.z, bulletOriginZ, endpoint.hitType);
-        bulletHolePlaced = true;
-      }
-    }
- 
     debugLog("projectileFire",
       `FIRED id=${pid} range=${totalDist.toFixed(2)} frames=${travelFrames} ` +
       `pitch=${state.pitch.toFixed(3)} type=${endpoint.hitType}`);
 
     const crosshair = getCrosshairGamePosition();
-    const bulletHole = bulletHolePlaced
-      ? getBulletHoleGamePosition(player, state.z, state.pitch, endpoint, bulletOriginZ)
-      : null;
     const crosshairText = crosshair
       ? `crosshairGamePx=(${crosshair.x.toFixed(1)},${crosshair.y.toFixed(1)})`
       : "crosshair=unavailable";
-    const holeText = bulletHole
-      ? `bulletHoleGamePx=(${bulletHole.x.toFixed(1)},${bulletHole.y.toFixed(1)})`
-      : "bulletHoleGamePx=none";
     debugLog("shotPlacement",
-      `SHOT id=${pid} ${crosshairText} ${holeText} surface=${endpoint.hitType}`);
+      `SHOT id=${pid} ${crosshairText} surface=${endpoint.hitType}`);
  
     // FIRE_RATE_FRAMES from constant.js controls shots-per-second
     state.cooldown = FIRE_RATE_FRAMES;
@@ -444,6 +384,7 @@ export function update() {
         x:       player.x,
         y:       player.y,
         z:       state.z,       // floor-relative, NOT +PROJECTILE_START_Z
+        shotOriginZ: bulletOriginZ,
         angle:   player.angle,
         pitch:   state.pitch,
       }));

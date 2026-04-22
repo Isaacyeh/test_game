@@ -29,6 +29,7 @@ const MAX_PROJECTILES_PER_PLAYER = 20;
 const TRACER_MAX_RANGE      = 18;
 const RAY_STEP              = 0.05;
 const PITCH_SCREEN_Y_SCALE  = 0.75;
+const PROJECTILE_START_Z    = 0.5;
 const SPAWN_INVINCIBILITY_MS = 5_000;
  
 const SPAWN = { x: 3, y: 17, angle: 0 };
@@ -176,10 +177,11 @@ function isSolidAt(x, y) {
   return true;
 }
  
-// ── Authoritative ray-based hit detection ─────────────────────────────────────
-// Now pitch-aware: the ray tracks z along its path so a pitched-up shot won't
-// hit a player that is below the aim line, and vice versa.
-function rayCastHit(shooterId, originX, originY, originZ, angle, pitch) {
+// ── Authoritative ray-based shot simulation ───────────────────────────────────
+// Returns the first collision along the shot path:
+// - victimId when a player is hit
+// - endpoint when world geometry (wall/floor/ceiling) is hit
+function rayCastShotResult(shooterId, originX, originY, originZ, angle, pitch) {
   const cosPitch = Math.cos(pitch || 0);
   const dx   = Math.cos(angle) * RAY_STEP * cosPitch;
   const dy   = Math.sin(angle) * RAY_STEP * cosPitch;
@@ -194,11 +196,28 @@ function rayCastHit(shooterId, originX, originY, originZ, angle, pitch) {
     x += dx;
     y += dy;
     z += dz;
+
+    if (z <= 0) {
+      return {
+        victimId: null,
+        endpoint: { x: x - dx * 0.5, y: y - dy * 0.5, z: 0, hitType: "floor" },
+      };
+    }
+
+    if (z >= 1) {
+      return {
+        victimId: null,
+        endpoint: { x: x - dx * 0.5, y: y - dy * 0.5, z: 1, hitType: "ceiling" },
+      };
+    }
  
     // Stop at solid wall
     if (isSolidAt(x, y)) {
       debugLog_server(`Ray hit wall at (${x.toFixed(2)}, ${y.toFixed(2)}) after ${i} steps`);
-      return null;
+      return {
+        victimId: null,
+        endpoint: { x: x - dx * 0.5, y: y - dy * 0.5, z: z - dz * 0.5, hitType: "wall" },
+      };
     }
  
     // Check each potential victim
@@ -218,12 +237,12 @@ function rayCastHit(shooterId, originX, originY, originZ, angle, pitch) {
                          z <= victimZTop + PROJECTILE_HIT_RADIUS_Z;
  
       if (xyDist <= PROJECTILE_HIT_RADIUS && zInRange) {
-        return victimId;
+        return { victimId, endpoint: null };
       }
     }
   }
  
-  return null;
+  return { victimId: null, endpoint: null };
 }
  
 function debugLog_server(msg) {
@@ -430,15 +449,21 @@ wss.on("connection", (ws) => {
       const originX = safeNum(data.x,     players[id].x,   0, 200);
       const originY = safeNum(data.y,     players[id].y,   0, 200);
       const originZ = safeNum(data.z,     players[id].z,   0, 10);
+      const sentShotOriginZ = safeNum(data.shotOriginZ, originZ + PROJECTILE_START_Z, 0, 10);
       const angle   = safeNum(data.angle, players[id].angle);
       const pitch   = safeNum(data.pitch, 0, -Math.PI/2, Math.PI/2);
+      const expectedShotOriginZ = players[id].z + PROJECTILE_START_Z;
+      const shotOriginZ = Math.abs(sentShotOriginZ - expectedShotOriginZ) <= 1
+        ? sentShotOriginZ
+        : expectedShotOriginZ;
  
       // Verify the origin is near the server's known position (anti-cheat)
       const posDrift = Math.hypot(originX - players[id].x, originY - players[id].y);
       if (posDrift > 2.0) return;
  
       // Pass pitch so the server ray tracks z correctly (no false hits above/below)
-      const victimId = rayCastHit(id, originX, originY, originZ, angle, pitch);
+      const shotResult = rayCastShotResult(id, originX, originY, shotOriginZ, angle, pitch);
+      const victimId = shotResult.victimId;
  
       if (victimId) {
         const victim    = players[victimId];
@@ -453,6 +478,17 @@ wss.on("connection", (ws) => {
         }
  
         markDirty();
+      }
+
+      if (shotResult.endpoint && shotResult.endpoint.hitType !== "none") {
+        broadcastAll({
+          type: "bulletHole",
+          wx: shotResult.endpoint.x,
+          wy: shotResult.endpoint.y,
+          endZ: shotResult.endpoint.z,
+          bulletOriginZ: shotOriginZ,
+          hitType: shotResult.endpoint.hitType,
+        });
       }
       return;
     }

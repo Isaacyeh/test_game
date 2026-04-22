@@ -24,7 +24,7 @@ fetch("/sprites.json")
 const DEFAULT_ASPECT = 0.5;
  
 // ── Bullet holes ──────────────────────────────────────────────────────────────
-// Spawned in player.js at shoot time using the raycast endpoint.
+// Spawned from server `bulletHole` events so all clients see the same impacts.
 //
 // Screen Y formula (stable — does NOT use pitchPixels, so holes never drift):
 //   sy = horizon + (bulletOriginZ - endZ) * wallH
