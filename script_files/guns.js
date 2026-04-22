@@ -32,6 +32,14 @@ export const GUNS = {
     cooldown: 8,
     projectileRadius: 0.01,
   },
+  penis: {
+    name: "penis",
+    damage: 1,
+    projectileSpeed: 4,
+    range: 25,
+    cooldown: 30,
+    projectileRadius: 0.01,
+  },
 };
 
 export function getGun(gunType) {
