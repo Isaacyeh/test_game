@@ -12,6 +12,7 @@ import {
   PROJECTILE_HIT_RADIUS,
   SPAWN_INVINCIBILITY_DURATION,
   TRACER_MAX_RANGE,
+  SHOOT_COOLDOWN,
 } from "./constant.js";
 import { isWall, map, getGeometry } from "./map.js";
 import { debugLog } from "./debug.js";
@@ -66,7 +67,7 @@ let keysRef = null;
 let wsRef = null;
 let mouseRef = null;
 let nextProjectileId = 1;
-let COOLDOWN = 10;
+let COOLDOWN = SHOOT_COOLDOWN;
  
 function getRandomSpawn() {
   return SPAWNS[Math.floor(Math.random() * SPAWNS.length)];
