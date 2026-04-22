@@ -17,7 +17,15 @@ import { isWall, map, getGeometry } from "./map.js";
 import { debugLog } from "./debug.js";
 import { keybinds, isPressed, initKeyMouseRef } from "./keybindControls.js";
  
-const SPAWN = { x: 17, y: 7, angle: 0, sneaking: false };
+// spwan locations
+const SPAWNS = [
+  { x: 14, y: 9, angle: Math.PI / 2, sneaking: false },
+  { x: 41, y: 15, angle: Math.PI, sneaking: false },
+  { x: 6, y: 21, angle: Math.PI, sneaking: false },
+  { x: 30, y: 28, angle: Math.PI, sneaking: false },
+];
+
+const SPAWN = getRandomSpawn();
 
 const defaultSkin = "https://www.clker.com/cliparts/a/4/1/d/1301963432622081819stick_figure%20(1).png";
 const importedSprite = localStorage.getItem("skinURL");
@@ -30,7 +38,7 @@ const STAMINA_COOLDOWN_FRAMES = 180;
 const SPRINT_SPEED_MULT = 1.6;
  
 const state = {
-  player: { ...SPAWN },
+  player: { ...getRandomSpawn() },
   z: 0,
   zVel: 0,
   onGround: true,
@@ -63,6 +71,12 @@ let mouseRef = null;
 let nextProjectileId = 1;
 let COOLDOWN = 10;
  
+function getRandomSpawn() {
+  return SPAWNS[Math.floor(Math.random() * SPAWNS.length)];
+}
+
+
+
 export function initPlayer(keys, ws, mouse) {
   keysRef = keys;
   wsRef = ws;
@@ -142,10 +156,12 @@ export function respawn() {
   state.isRespawning = true;
   state.invincibilityTimer = SPAWN_INVINCIBILITY_DURATION;
  
-  state.player.x = SPAWN.x;
-  state.player.y = SPAWN.y;
-  state.player.angle = SPAWN.angle;
-  state.player.sneaking = SPAWN.sneaking;
+  const spawn = getRandomSpawn();
+
+  state.player.x = spawn.x;
+  state.player.y = spawn.y;
+  state.player.angle = spawn.angle;
+  state.player.sneaking = spawn.sneaking;
  
   state.z = 0;
   state.zVel = 0;
