@@ -1,5 +1,5 @@
 
-import { FOV, JUMP_SCALE, MAX_HEALTH, PROJECTILE_START_Z } from "../constant.js";
+import { FOV, JUMP_SCALE, MAX_HEALTH, PITCH_SCREEN_Y_SCALE, PROJECTILE_START_Z } from "../constant.js";
 import { castRay } from "./castRay.js";
 import { drawMinimap } from "./minimap.js";
 import { getState, respawn } from "../player.js";
@@ -263,7 +263,7 @@ export function render(canvas, ctx) {
   // Fixed horizon — pitch does NOT shift this.
   const horizon     = canvas.height / 2 + jumpOffset;
   // Pitch translate: positive pitch (look down) shifts scene up on screen.
-  const pitchPixels = pitch * canvas.height * 0.75;
+  const pitchPixels = pitch * canvas.height * PITCH_SCREEN_Y_SCALE;
   const extraPad    = Math.abs(pitchPixels) + 4;
  
   // Crosshair in scene coords (inside the translate):

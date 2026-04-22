@@ -28,6 +28,7 @@ const MAX_HEALTH            = 1;
 const MAX_PROJECTILES_PER_PLAYER = 20;
 const TRACER_MAX_RANGE      = 18;
 const RAY_STEP              = 0.05;
+const PITCH_SCREEN_Y_SCALE  = 0.75;
 const SPAWN_INVINCIBILITY_MS = 5_000;
  
 const SPAWN = { x: 3, y: 17, angle: 0 };
@@ -180,10 +181,9 @@ function isSolidAt(x, y) {
 // hit a player that is below the aim line, and vice versa.
 function rayCastHit(shooterId, originX, originY, originZ, angle, pitch) {
   const cosPitch = Math.cos(pitch || 0);
-  const sinPitch = Math.sin(pitch || 0);
   const dx   = Math.cos(angle) * RAY_STEP * cosPitch;
   const dy   = Math.sin(angle) * RAY_STEP * cosPitch;
-  const dz   = -sinPitch * RAY_STEP;          // z decreases when pitching down
+  const dz   = -(pitch || 0) * PITCH_SCREEN_Y_SCALE * RAY_STEP * cosPitch;
   const maxSteps = Math.ceil(TRACER_MAX_RANGE / RAY_STEP);
  
   let x = originX;

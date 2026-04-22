@@ -2,6 +2,7 @@ import {
   PLAYER_RADIUS,
   MOVE_SPEED,
   FOV,
+  JUMP_SCALE,
   JUMP_VELOCITY,
   GRAVITY,
   MAX_JUMP,
@@ -17,6 +18,7 @@ import {
   PITCH_MAX,
   PITCH_SPEED,
   PITCH_MOUSE_SENS,
+  PITCH_SCREEN_Y_SCALE,
   FIRE_RATE_FRAMES,
 } from "./constant.js";
 import { isWall, map, getGeometry } from "./map.js";
@@ -180,10 +182,9 @@ function raycastShot(originX, originY, originZ, angle, pitch) {
   const STEP = 0.05;
   const MAX_STEPS = Math.ceil(TRACER_MAX_RANGE / STEP);
   const cosPitch = Math.cos(pitch);
-  const sinPitch = Math.sin(pitch);
   const dx = Math.cos(angle) * STEP * cosPitch;
   const dy = Math.sin(angle) * STEP * cosPitch;
-  const dz = -sinPitch * STEP;
+  const dz = -pitch * PITCH_SCREEN_Y_SCALE * STEP * cosPitch;
  
   let x = originX, y = originY, z = originZ;
  
@@ -220,20 +221,18 @@ function pointHitsPlayer(px, py, pz) {
 function getCrosshairGamePosition() {
   const canvas = document.getElementById("game");
   if (!canvas) return null;
-  const rect = canvas.getBoundingClientRect();
   return {
-    x: rect.width / 2,
-    y: rect.height / 2,
+    x: canvas.width / 2,
+    y: canvas.height / 2,
   };
 }
 
-function getBulletHoleGamePosition(player, endpoint, bulletOriginZ) {
+function getBulletHoleGamePosition(player, playerZ, pitch, endpoint, bulletOriginZ) {
   const canvas = document.getElementById("game");
   if (!canvas) return null;
 
-  const rect = canvas.getBoundingClientRect();
-  const canvasW = rect.width;
-  const canvasH = rect.height;
+  const canvasW = canvas.width;
+  const canvasH = canvas.height;
   const dx = endpoint.x - player.x;
   const dy = endpoint.y - player.y;
   const rawDist = Math.hypot(dx, dy);
@@ -247,8 +246,8 @@ function getBulletHoleGamePosition(player, endpoint, bulletOriginZ) {
   if (perpDist < 0.0001) return null;
 
   const wallH = canvasH / perpDist;
-  const horizon = canvasH / 2;
-  const pitchPixels = (state.pitch / (FOV / 2)) * (canvasH / 2);
+  const horizon = canvasH / 2 + playerZ * JUMP_SCALE;
+  const pitchPixels = pitch * canvasH * PITCH_SCREEN_Y_SCALE;
   const sy = horizon + (bulletOriginZ - endpoint.z) * wallH - pitchPixels;
 
   return { x: sx, y: sy };
@@ -380,7 +379,7 @@ export function update() {
     const totalDist    = Math.hypot(endpoint.x - player.x, endpoint.y - player.y);
     const travelFrames = Math.max(1, Math.round(totalDist / PROJECTILE_SPEED));
     const cosPitch     = Math.cos(state.pitch);
-    const sinPitch     = Math.sin(state.pitch);
+    const pitchSlope   = state.pitch * PITCH_SCREEN_Y_SCALE;
  
     state.projectiles.push({
       id:          pid,
@@ -397,7 +396,7 @@ export function update() {
       endZ:        endpoint.z,
       vx:          Math.cos(player.angle) * PROJECTILE_SPEED * cosPitch,
       vy:          Math.sin(player.angle) * PROJECTILE_SPEED * cosPitch,
-      vz:          -sinPitch * PROJECTILE_SPEED,
+      vz:          -pitchSlope * PROJECTILE_SPEED * cosPitch,
       ttl:         travelFrames,
       totalFrames: travelFrames,
       hitWall:     endpoint.hitWall,
@@ -421,7 +420,7 @@ export function update() {
 
     const crosshair = getCrosshairGamePosition();
     const bulletHole = bulletHolePlaced
-      ? getBulletHoleGamePosition(player, endpoint, bulletOriginZ)
+      ? getBulletHoleGamePosition(player, state.z, state.pitch, endpoint, bulletOriginZ)
       : null;
     const crosshairText = crosshair
       ? `crosshairGamePx=(${crosshair.x.toFixed(1)},${crosshair.y.toFixed(1)})`

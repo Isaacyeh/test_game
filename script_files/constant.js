@@ -30,6 +30,8 @@ export const PITCH_MAX_DEGREES = 45;    // change this to adjust max vertical lo
 export const PITCH_MAX = PITCH_MAX_DEGREES * (Math.PI / 180);
 export const PITCH_SPEED = 0.03;        // radians per frame (arrow keys)
 export const PITCH_MOUSE_SENS = 0.003;  // radians per pixel (mouse Y)
+// Converts pitch radians to vertical screen shift as a fraction of canvas height.
+export const PITCH_SCREEN_Y_SCALE = 0.75;
  
 // FOV setter — called by the FOV slider in the UI
 export function setFOV(radians) {
