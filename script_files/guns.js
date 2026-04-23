@@ -1,63 +1,93 @@
-import {PLAYER_RADIUS} from "./constant.js";
-
-//projectile constants
-export const PROJECTILE_SPEED = 2;          // Visual tracer speed (world units/frame)
-export const PROJECTILE_LIFETIME = 60;         // Tracer lives 60 frames max (it dies at wall/range)
-export const PROJECTILE_START_Z = 0.0;
-export const PROJECTILE_RADIUS = 0.0125;        // Visual only — hit detection is ray-based
-export const TRACER_MAX_RANGE = 18;   
-export const SHOOT_COOLDOWN = 10;  // Cooldown between shots in frames
-
-export const HIT_DAMAGE = 10;
-
-// Ray-based hit detection radius (used server-side too)
-export const PROJECTILE_HIT_RADIUS = PLAYER_RADIUS + PROJECTILE_RADIUS; // 0.225
-export const PROJECTILE_HIT_RADIUS_Z = PLAYER_RADIUS + PROJECTILE_RADIUS; // 0.225
-
 // script_files/guns.js
+
+// Global projectile physics constants
+export const PROJECTILE_SPEED = 0.15;           // world units per frame
+export const PROJECTILE_LIFETIME = 300;         // frames before expiration
+export const PROJECTILE_START_Z = 0.15;         // z-offset when spawned from player
+export const HIT_DAMAGE = 0.1;                  // health damage per hit
+export const PROJECTILE_HIT_RADIUS = 0.225;     // hit detection radius
+export const TRACER_MAX_RANGE = 18;             // max range for tracer/raycast
+export const SHOOT_COOLDOWN = 10;               // default cooldown frames
+
 export const GUNS = {
   rifle: {
     name: "Rifle",
-    damage: 0.1,
+    damage: 10,
     projectileSpeed: 2,
     range: 18,
     cooldown: 10,
     projectileRadius: 0.0125,
+    color: "#4db8ff"
   },
   shotgun: {
     name: "Shotgun",
-    damage: 0.15,
+    damage: 15,
     projectileSpeed: 3,
     range: 12,
     cooldown: 20,
     projectileRadius: 0.05,
+    color: "#7f4dff"
   },
   sniper: {
     name: "Sniper",
-    damage: 0.3,
+    damage: 35,
     projectileSpeed: 4,
     range: 25,
     cooldown: 30,
     projectileRadius: 0.005,
+    color: "#4dff62"
   },
-  pistol: {
-    name: "Pistol",
-    damage: 0.08,
-    projectileSpeed: 2.5,
+  machinegun: {
+    name: "Machine Gun",
+    damage: 5,
+    projectileSpeed: 3,
     range: 15,
-    cooldown: 8,
+    cooldown: 4,
     projectileRadius: 0.01,
-  },
-  penis: {
-    name: "penis",
-    damage: 1,
-    projectileSpeed: 4,
-    range: 25,
-    cooldown: 30,
-    projectileRadius: 0.01,
+    color: "#ff504d"
   },
 };
 
-export function getGun(gunType) {
-  return GUNS[gunType] || GUNS.rifle;
+export function getGun(gunId) {
+  return GUNS[gunId] || GUNS.rifle;
+}
+
+export const selectedGun = { current: GUNS.rifle };
+
+function renderGuns() {
+  const list = document.getElementById("gunMenu");
+  list.innerHTML = "";
+
+  Object.entries(GUNS).forEach(([id, gunData]) => {
+    const btn = document.createElement("button");
+    btn.className = "gun-btn" + (selectedGun.current === gunData ? " selected" : "");
+    btn.textContent = gunData.name;
+    btn.addEventListener("click", () => selectGun(id));
+    list.appendChild(btn);
+  });
+}
+
+function selectGun(id) {
+  selectedGun.current = GUNS[id];
+  renderGuns();
+}
+
+export function initGunMenu(onClose) {
+  document.getElementById("closeGuns").addEventListener("click", onClose);
+
+  document.getElementById("gunReset").addEventListener("click", () => {
+    selectedGun.current = GUNS.rifle;
+    renderGuns();
+  });
+
+  document.getElementById("gunSave").addEventListener("click", () => {
+    const id = Object.keys(GUNS).find(k => GUNS[k] === selectedGun.current) || "rifle";
+    localStorage.setItem("selectedGun", id);
+  });
+
+  // Restore from localStorage on load
+  const saved = localStorage.getItem("selectedGun");
+  if (saved && GUNS[saved]) selectedGun.current = GUNS[saved];
+
+  renderGuns();
 }

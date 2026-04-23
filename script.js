@@ -15,6 +15,7 @@ import { loadSprites } from "./UI/spriteMenu.js";
 import { setCrosshairOptions } from "./script_files/crosshair.js";
 import { debugToggles } from "./script_files/debug.js";
 import { keybinds, initKeybindMenu } from "./script_files/keybindControls.js";
+import { initGunMenu } from "./script_files/guns.js";
  
 const keys = {};
 const mouse = { x: 0, y: 0, dx: 0, dy: 0, buttons: {} };
@@ -31,6 +32,8 @@ const crosshairOpacityInput = document.getElementById("crosshairOpacityInput");
 const confirmCustomization  = document.getElementById("confirmCustomization");
 const keybindsOverlay       = document.getElementById("keybindsOverlay");
 const keybindsMenuLink      = document.getElementById("keybindsMenuLink");
+const gunsOverlay          = document.getElementById("gunsOverlay");
+const gunsMenuLink         = document.getElementById("gunsMenuLink");
 const settingsMenuLink      = document.getElementById("settingsMenuLink");
 const settingsOverlay       = document.getElementById("settingsOverlay");
 const closeSettings         = document.getElementById("closeSettings");
@@ -49,6 +52,7 @@ let pendingSkinBlob = null;
  
 menu.classList.add("hidden");
 customizationOverlay.classList.add("hidden");
+gunsOverlay.classList.add("hidden");
 settingsOverlay.classList.add("hidden");
 setCrosshairOptions({ opacity: appliedCrosshairOpacity, imageSrc: "" });
  
@@ -67,13 +71,17 @@ function isCustomizationOpen() {
 function isKeybindsOpen() {
   return !keybindsOverlay.classList.contains("hidden");
 }
+
+function isGunsOpen() {
+  return !gunsOverlay.classList.contains("hidden");
+}
  
 function isSettingsOpen() {
   return !settingsOverlay.classList.contains("hidden");
 }
  
 function isAnyMenuOpen() {
-  return isCustomizationOpen() || isKeybindsOpen() || isSettingsOpen();
+  return isCustomizationOpen() || isKeybindsOpen() || isGunsOpen() || isSettingsOpen();
 }
  
 let _prevMenuOpen = false;
@@ -296,7 +304,36 @@ keybindsOverlay.addEventListener("click", (e) => {
 });
  
 initKeybindMenu(closeKeybindsOverlay);
- 
+
+// ── Guns overlay ──────────────────────────────────────────────────────────────
+function openGunsOverlay() {
+  gunsOverlay.classList.remove("hidden");
+  gunsOverlay.setAttribute("aria-hidden", "false");
+  syncMenuControlState();
+  clearInputState();
+  if (document.pointerLockElement === canvas) document.exitPointerLock();
+}
+
+function closeGunsOverlay() {
+  gunsOverlay.classList.add("hidden");
+  gunsOverlay.setAttribute("aria-hidden", "true");
+  syncMenuControlState();
+  clearInputState();
+}
+
+gunsMenuLink.addEventListener("click", (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  menu.classList.add("hidden");
+  openGunsOverlay();
+});
+
+gunsOverlay.addEventListener("click", (e) => {
+  if (e.target === gunsOverlay) closeGunsOverlay();
+});
+
+initGunMenu(closeGunsOverlay);
+
 // ── Settings overlay (debug toggles) ─────────────────────────────────────────
 function openSettingsOverlay() {
   settingsOverlay.classList.remove("hidden");

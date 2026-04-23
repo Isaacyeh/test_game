@@ -18,13 +18,24 @@ const PORT = process.env.PORT || 3000;
 // Static files
 app.use(express.static(path.join(__dirname), { index: "index.html" }));
  
+//GUNS
+
+const GUNS = {
+  rifle:      { damage: 10, cooldown: 10, cooldownMs: 167,  projectileSpeed: 2,  range: 18, projectileRadius: 0.0125, color: "#4db8ff" },
+  shotgun:    { damage: 15, cooldown: 20, cooldownMs: 333,  projectileSpeed: 3,  range: 12, projectileRadius: 0.05,   color: "#7f4dff" },
+  sniper:     { damage: 35, cooldown: 30, cooldownMs: 500,  projectileSpeed: 4,  range: 25, projectileRadius: 0.005,  color: "#4dff62" },
+  machinegun: { damage: 5,  cooldown: 4,  cooldownMs: 67,   projectileSpeed: 3,  range: 15, projectileRadius: 0.01,   color: "#ff504d" },
+};
+
+
+
 // ── Constants — must match client constant.js ─────────────────────────────────
-const HIT_DAMAGE            = 0.1;
+//const HIT_DAMAGE              = 0.1;
 const PLAYER_RADIUS         = 0.2;
 const PROJECTILE_RADIUS     = 0.025;
 const PROJECTILE_HIT_RADIUS = PLAYER_RADIUS + PROJECTILE_RADIUS; // 0.225
 const PROJECTILE_HIT_RADIUS_Z = PLAYER_RADIUS + PROJECTILE_RADIUS;
-const MAX_HEALTH            = 1;
+const MAX_HEALTH            = 100;
 const MAX_PROJECTILES_PER_PLAYER = 20;
 const TRACER_MAX_RANGE      = 18;   // must match client
 const RAY_STEP              = 0.05; // must be small enough to not skip players
@@ -377,6 +388,12 @@ wss.on("connection", (ws) => {
       markDirty();
       return;
     }
+
+    if (data.type === "setGun") {
+      const gunId = String(data.gun || "rifle");
+      if (GUNS[gunId]) players[id].gun = gunId;
+      return;
+    }
  
     if (data.type === "menuOpen") {
       players[id].inMenu = true;
@@ -423,33 +440,35 @@ wss.on("connection", (ws) => {
     if (data.type === "shoot") {
       if (players[id].inMenu) return;
       if (players[id].health <= 0) return;
- 
+
       const originX = safeNum(data.x,     players[id].x,   0, 200);
       const originY = safeNum(data.y,     players[id].y,   0, 200);
       const originZ = safeNum(data.z,     players[id].z,   0, 10);
       const angle   = safeNum(data.angle, players[id].angle);
- 
-      // Verify the origin is near the server's known position (anti-cheat)
+
       const posDrift = Math.hypot(originX - players[id].x, originY - players[id].y);
-      if (posDrift > 2.0) {
-        // Origin is too far from server-known position — reject
-        return;
-      }
- 
+      if (posDrift > 2.0) return;
+
+      // Server-side cooldown check (anti-cheat)
+      const gun = GUNS[players[id].gun || "rifle"];
+      const now = Date.now();
+      if (now - (players[id].lastShotAt || 0) < gun.cooldownMs) return;
+      players[id].lastShotAt = now;
+
       const victimId = rayCastHit(id, originX, originY, originZ, angle);
- 
+
       if (victimId) {
-        const victim    = players[victimId];
+        const victim     = players[victimId];
         const prevHealth = victim.health;
-        victim.health   = Math.max(0, Number((victim.health - HIT_DAMAGE).toFixed(3)));
- 
+        victim.health = Math.max(0, Math.round(victim.health - gun.damage));
+
         if (prevHealth > 0 && victim.health <= 0) {
           if (!playerStats[id])       playerStats[id]       = { kills: 0, deaths: 0 };
           if (!playerStats[victimId]) playerStats[victimId] = { kills: 0, deaths: 0 };
           playerStats[id].kills++;
           playerStats[victimId].deaths++;
         }
- 
+
         markDirty();
       }
       return;

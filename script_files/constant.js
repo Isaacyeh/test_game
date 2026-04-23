@@ -11,7 +11,7 @@ export const MINIMAP_SCALE = 10;
 export const MINIMAP_PADDING = 10;
 
 //health constants
-export const MAX_HEALTH = 1;
+export const MAX_HEALTH = 100;
 //invincibility constants
 export const SPAWN_INVINCIBILITY_DURATION = 300; // 5 seconds at 60fps
 
