@@ -10,17 +10,16 @@ import {
   PROJECTILE_RADIUS,
   TRACER_MAX_RANGE,
   MAX_HEALTH,
-  HIT_DAMAGE,
   SPAWN_INVINCIBILITY_DURATION,
   PITCH_MAX,
   PITCH_SPEED,
   PITCH_MOUSE_SENS,
   PITCH_SCREEN_Y_SCALE,
-  FIRE_RATE_FRAMES,
 } from "./constant.js";
 import { isWall, map, getGeometry } from "./map.js";
 import { debugLog } from "./debug.js";
 import { keybinds, isPressed, initKeyMouseRef } from "./keybindControls.js";
+import { selectedGun } from "./guns.js";
  
 const SPAWN = { x: 17, y: 7, angle: 0, sneaking: false };
  
@@ -215,9 +214,9 @@ export function respawn() {
  
 // ── Raycast shot ──────────────────────────────────────────────────────────────
 // Returns xy endpoint, world-z at impact, and surface type hit.
-function raycastShot(originX, originY, originZ, angle, pitch) {
+function raycastShot(originX, originY, originZ, angle, pitch, maxRange = TRACER_MAX_RANGE) {
   const STEP = 0.05;
-  const MAX_STEPS = Math.ceil(TRACER_MAX_RANGE / STEP);
+  const MAX_STEPS = Math.ceil(maxRange / STEP);
   const cosPitch = Math.cos(pitch);
   const dx = Math.cos(angle) * STEP * cosPitch;
   const dy = Math.sin(angle) * STEP * cosPitch;
@@ -365,6 +364,7 @@ export function update() {
  
   if ((primaryHeld || secondaryHeld) && state.cooldown === 0) {
     const pid = nextProjectileId++;
+    const gun = selectedGun.current;
  
     // Visual bullet origin: eye/torso height
     const bulletOriginZ = state.z + PROJECTILE_START_Z;
@@ -375,11 +375,11 @@ export function update() {
  
     const endpoint = raycastShot(
       player.x, player.y, bulletOriginZ,
-      player.angle, state.pitch
+      player.angle, state.pitch, gun.range
     );
  
     const totalDist    = Math.hypot(endpoint.x - startX, endpoint.y - startY);
-    const travelFrames = Math.max(1, Math.round(totalDist / PROJECTILE_SPEED));
+    const travelFrames = Math.max(1, Math.round(totalDist / (PROJECTILE_SPEED * gun.projectileSpeed)));
     const pitchSlope   = state.pitch * PITCH_SCREEN_Y_SCALE;
  
     state.projectiles.push({
@@ -395,19 +395,21 @@ export function update() {
       endX:        endpoint.x,
       endY:        endpoint.y,
       endZ:        endpoint.z,
-      vx:          Math.cos(player.angle) * PROJECTILE_SPEED * cosPitch,
-      vy:          Math.sin(player.angle) * PROJECTILE_SPEED * cosPitch,
-      vz:          -pitchSlope * PROJECTILE_SPEED * cosPitch,
+      vx:          Math.cos(player.angle) * PROJECTILE_SPEED * gun.projectileSpeed * cosPitch,
+      vy:          Math.sin(player.angle) * PROJECTILE_SPEED * gun.projectileSpeed * cosPitch,
+      vz:          -pitchSlope * PROJECTILE_SPEED * gun.projectileSpeed * cosPitch,
       ttl:         travelFrames,
       totalFrames: travelFrames,
       spawnFramesLeft: 1,
       hitWall:     endpoint.hitWall,
       hitType:     endpoint.hitType,
+      color:       gun.color,
+      radiusScale: gun.projectileRadius / PROJECTILE_RADIUS,
     });
  
     debugLog("projectileFire",
       `FIRED id=${pid} range=${totalDist.toFixed(2)} frames=${travelFrames} ` +
-      `pitch=${state.pitch.toFixed(3)} type=${endpoint.hitType}`);
+      `pitch=${state.pitch.toFixed(3)} type=${endpoint.hitType} gun=${gun.name}`);
 
     const crosshair = getCrosshairGamePosition();
     const crosshairText = crosshair
@@ -416,8 +418,7 @@ export function update() {
     debugLog("shotPlacement",
       `SHOT id=${pid} ${crosshairText} surface=${endpoint.hitType}`);
  
-    // FIRE_RATE_FRAMES from constant.js controls shots-per-second
-    state.cooldown = FIRE_RATE_FRAMES;
+    state.cooldown = gun.cooldown;
  
     // Send floor-relative z to server so the Z hit check passes.
     // The server's rayCastHit now tracks z along the ray using pitch,
@@ -432,6 +433,7 @@ export function update() {
         shotOriginZ: bulletOriginZ,
         angle:   player.angle,
         pitch:   state.pitch,
+        gun:     gun.name,
       }));
     }
   }

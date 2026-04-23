@@ -1,5 +1,5 @@
 
-import { FOV, JUMP_SCALE, MAX_HEALTH, PITCH_SCREEN_Y_SCALE, PROJECTILE_START_Z } from "../constant.js";
+import { FOV, JUMP_SCALE, MAX_HEALTH, PITCH_SCREEN_Y_SCALE } from "../constant.js";
 import { castRay } from "./castRay.js";
 import { drawMinimap } from "./minimap.js";
 import { getState, respawn } from "../player.js";
@@ -339,7 +339,14 @@ export function render(canvas, ctx) {
       if (!isLocal && depth[di] < perpDist) continue;
  
       const radiusDist = Math.max(perpDist, 0.55);
-      const radius = Math.min(8, Math.max(1, canvas.height / Math.max(radiusDist * 20, 0.0001)));
+      const radiusScale = Number.isFinite(proj.radiusScale) && proj.radiusScale > 0
+        ? proj.radiusScale
+        : 1;
+      const radius = Math.min(
+        8,
+        Math.max(1, canvas.height / Math.max(radiusDist * 20, 0.0001)) * radiusScale
+      );
+      const color = typeof proj.color === "string" ? proj.color : "#4db8ff";
  
       let bulletSy;
       if (isLocal) {
@@ -354,7 +361,7 @@ export function render(canvas, ctx) {
         bulletSy = horizon + dz * wallH;
       }
  
-      drawSphere(ctx, sx, bulletSy, radius);
+      drawSphere(ctx, sx, bulletSy, radius, color);
  
     } else {
       // Remote player sprite

@@ -18,6 +18,7 @@ import { loadSprites } from "./UI/spriteMenu.js";
 import { setCrosshairOptions } from "./script_files/crosshair.js";
 import { debugToggles } from "./script_files/debug.js";
 import { keybinds, initKeybindMenu } from "./script_files/keybindControls.js";
+import { initGunMenu, getSelectedGunId } from "./script_files/guns.js";
 
 window.__bootstrapStarted = true;
  
@@ -62,6 +63,8 @@ const crosshairOpacityInput = document.getElementById("crosshairOpacityInput");
 const confirmCustomization  = document.getElementById("confirmCustomization");
 const keybindsOverlay       = document.getElementById("keybindsOverlay");
 const keybindsMenuLink      = document.getElementById("keybindsMenuLink");
+const gunsOverlay           = document.getElementById("gunsOverlay");
+const gunsMenuLink          = document.getElementById("gunsMenuLink");
 const settingsMenuLink      = document.getElementById("settingsMenuLink");
 const settingsOverlay       = document.getElementById("settingsOverlay");
 const closeSettings         = document.getElementById("closeSettings");
@@ -83,6 +86,8 @@ requireEl("crosshairOpacityInput", crosshairOpacityInput);
 requireEl("confirmCustomization", confirmCustomization);
 requireEl("keybindsOverlay", keybindsOverlay);
 requireEl("keybindsMenuLink", keybindsMenuLink);
+requireEl("gunsOverlay", gunsOverlay);
+requireEl("gunsMenuLink", gunsMenuLink);
 requireEl("settingsMenuLink", settingsMenuLink);
 requireEl("settingsOverlay", settingsOverlay);
 requireEl("closeSettings", closeSettings);
@@ -101,6 +106,7 @@ let pendingSkinBlob = null;
  
 menu.classList.add("hidden");
 customizationOverlay.classList.add("hidden");
+gunsOverlay.classList.add("hidden");
 settingsOverlay.classList.add("hidden");
 setCrosshairOptions({ opacity: appliedCrosshairOpacity, imageSrc: "" });
  
@@ -114,8 +120,9 @@ function clearInputState() {
  
 function isCustomizationOpen() { return !customizationOverlay.classList.contains("hidden"); }
 function isKeybindsOpen()      { return !keybindsOverlay.classList.contains("hidden"); }
+function isGunsOpen()          { return !gunsOverlay.classList.contains("hidden"); }
 function isSettingsOpen()      { return !settingsOverlay.classList.contains("hidden"); }
-function isAnyMenuOpen()       { return isCustomizationOpen() || isKeybindsOpen() || isSettingsOpen(); }
+function isAnyMenuOpen()       { return isCustomizationOpen() || isKeybindsOpen() || isGunsOpen() || isSettingsOpen(); }
  
 let _prevMenuOpen = false;
 function syncMenuControlState() {
@@ -389,7 +396,10 @@ confirmCustomization.addEventListener("click", () => {
   appliedCrosshairOpacity = pendingCrosshairOpacity;
   appliedCrosshairBlobUrl = pendingCrosshairBlobUrl;
   setCrosshairOptions({ opacity: appliedCrosshairOpacity, imageSrc: appliedCrosshairImage });
-  if (pendingSkinUrl) setSprite(pendingSkinUrl);
+  if (pendingSkinUrl) {
+    setSprite(pendingSkinUrl);
+    localStorage.setItem("skinURL", pendingSkinUrl);
+  }
   closeCustomizationOverlay();
 });
  
@@ -414,6 +424,35 @@ keybindsOverlay.addEventListener("click", (e) => {
   if (e.target === keybindsOverlay) closeKeybindsOverlay();
 });
 initKeybindMenu(closeKeybindsOverlay);
+
+// ── Guns overlay ──────────────────────────────────────────────────────────────
+function openGunsOverlay() {
+  gunsOverlay.classList.remove("hidden");
+  gunsOverlay.setAttribute("aria-hidden", "false");
+  syncMenuControlState();
+  clearInputState();
+  if (document.pointerLockElement === canvas) document.exitPointerLock();
+}
+function closeGunsOverlay() {
+  gunsOverlay.classList.add("hidden");
+  gunsOverlay.setAttribute("aria-hidden", "true");
+  syncMenuControlState();
+  clearInputState();
+}
+gunsMenuLink.addEventListener("click", (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  menu.classList.add("hidden");
+  openGunsOverlay();
+});
+gunsOverlay.addEventListener("click", (e) => {
+  if (e.target === gunsOverlay) closeGunsOverlay();
+});
+initGunMenu(closeGunsOverlay, (gunId) => {
+  if (gameWs && gameWs.readyState === WebSocket.OPEN) {
+    gameWs.send(JSON.stringify({ type: "setGun", gun: gunId }));
+  }
+});
  
 // ── Settings overlay ──────────────────────────────────────────────────────────
 function openSettingsOverlay() {
@@ -469,6 +508,7 @@ let gameStarted = false;
 let retryCount  = 0;
 let pingTimer = null;
 let lastRttMs = null;
+let gameWs = null;
  
 function connectWebSocket() {
   if (retryCount === 0) {
@@ -483,6 +523,7 @@ function connectWebSocket() {
   let ws;
   try {
     ws = new WebSocket(wsProtocol + location.host);
+    gameWs = ws;
   } catch (err) {
     loader.updateStep("ws", "fail", `WebSocket creation failed: ${err.message}`);
     loader.showError(`Failed to create WebSocket connection.\n${err.message}`,
@@ -585,6 +626,7 @@ function connectWebSocket() {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: "setName",      name: username }));
         ws.send(JSON.stringify({ type: "setSprite",    sprite }));
+        ws.send(JSON.stringify({ type: "setGun",       gun: getSelectedGunId() }));
         ws.send(JSON.stringify({ type: "initialSpawn" }));
       }
  

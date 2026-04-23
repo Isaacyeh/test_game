@@ -36,6 +36,13 @@ const MAX_REMOTE_SPRITE_URL_LENGTH = 4096;
 const MAX_INLINE_SPRITE_DATA_URL_LENGTH = 350_000;
 const MAX_CHAT_IMAGE_DATA_URL_LENGTH = 350_000;
 const BROADCAST_HZ = safeNum(Number(process.env.BROADCAST_HZ), 30, 10, 120);
+
+const GUNS = {
+  rifle:      { damage: 10, cooldown: 10, cooldownMs: 167, projectileSpeed: 2, range: 18, projectileRadius: 0.0125, color: "#4db8ff" },
+  shotgun:    { damage: 20, cooldown: 25, cooldownMs: 333, projectileSpeed: 3, range: 12, projectileRadius: 0.1,    color: "#7f4dff" },
+  sniper:     { damage: 35, cooldown: 30, cooldownMs: 500, projectileSpeed: 4, range: 25, projectileRadius: 0.005,  color: "#4dff62" },
+  machinegun: { damage: 5,  cooldown: 4,  cooldownMs: 67,  projectileSpeed: 3, range: 15, projectileRadius: 0.01,   color: "#ff504d" },
+};
  
 const SPAWN = { x: 3, y: 17, angle: 0 };
 
@@ -313,6 +320,7 @@ function _doBroadcastPlayers() {
       projectiles: p.projectiles || [],
       health:      p.health,
       sneaking:    p.sneaking,
+      gun:         p.gun || "rifle",
       isDead:      p.health <= 0,
       isInvincible: Date.now() < (p.invincibleUntil || 0),
       kills:       playerStats[id]?.kills  || 0,
@@ -402,6 +410,7 @@ wss.on("connection", (ws) => {
     sprite:         "/images/sprite1.png",
     spriteAspect:   0.5,
     invincibleUntil: Date.now() + SPAWN_INVINCIBILITY_MS,
+    gun:            "rifle",
     inMenu:         false,
     sneaking:       false,
   };
@@ -461,6 +470,15 @@ wss.on("connection", (ws) => {
       markDirty();
       return;
     }
+
+    if (data.type === "setGun") {
+      const gunId = String(data.gun || "rifle");
+      if (GUNS[gunId]) {
+        players[id].gun = gunId;
+        markDirty();
+      }
+      return;
+    }
  
     if (data.type === "menuOpen") {
       players[id].inMenu = true;
@@ -505,6 +523,11 @@ wss.on("connection", (ws) => {
     if (data.type === "shoot") {
       if (players[id].inMenu) return;
       if (players[id].health <= 0) return;
+
+      const gun = GUNS[players[id].gun] || GUNS.rifle;
+      const now = Date.now();
+      if (now - (players[id].lastShotAt || 0) < gun.cooldownMs) return;
+      players[id].lastShotAt = now;
  
       const originX = safeNum(data.x,     players[id].x,   0, 200);
       const originY = safeNum(data.y,     players[id].y,   0, 200);
@@ -528,7 +551,7 @@ wss.on("connection", (ws) => {
       if (victimId) {
         const victim    = players[victimId];
         const prevHealth = victim.health;
-        victim.health   = Math.max(0, Number((victim.health - HIT_DAMAGE).toFixed(3)));
+        victim.health   = Math.max(0, Number((victim.health - gun.damage).toFixed(3)));
  
         if (prevHealth > 0 && victim.health <= 0) {
           if (!playerStats[id])       playerStats[id]       = { kills: 0, deaths: 0 };
