@@ -5,7 +5,12 @@
 export const debugToggles = {
   playerMovement:  { label: "Player movement logs",    enabled: false },
   projectileFire:  { label: "Projectile fire logs",    enabled: false },
+  shotPlacement:   { label: "Shot placement logs",     enabled: false },
+  bulletHoles:     { label: "Bullet hole rendering",   enabled: false },
+  pitchLabel:      { label: "Pitch label display",     enabled: false },
+  networkLagLabel: { label: "Network lag label",       enabled: false },
   networkSend:     { label: "Network send logs",       enabled: false },
+  fpsLabel:        { label: "FPS counter display",     enabled: false },
   hitDetection:    { label: "Hit detection logs",      enabled: false },
   spawnInvincible: { label: "Spawn invincibility logs", enabled: false },
 };
