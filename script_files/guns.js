@@ -21,11 +21,11 @@ export const GUNS = {
   },
   shotgun: {
     name: "Shotgun",
-    damage: 15,
+    damage: 20,
     projectileSpeed: 3,
     range: 12,
-    cooldown: 20,
-    projectileRadius: 0.05,
+    cooldown: 25,
+    projectileRadius: 0.1,
     color: "#7f4dff"
   },
   sniper: {
@@ -53,6 +53,11 @@ export function getGun(gunId) {
 }
 
 export const selectedGun = { current: GUNS.rifle };
+let onGunSelectCallback = null;
+
+export function getSelectedGunId() {
+  return Object.keys(GUNS).find((k) => GUNS[k] === selectedGun.current) || "rifle";
+}
 
 function renderGuns() {
   const list = document.getElementById("gunMenu");
@@ -70,14 +75,18 @@ function renderGuns() {
 function selectGun(id) {
   selectedGun.current = GUNS[id];
   renderGuns();
+  if (typeof onGunSelectCallback === "function") onGunSelectCallback(id);
 }
 
-export function initGunMenu(onClose) {
+export function initGunMenu(onClose, onSelectGun) {
+  onGunSelectCallback = typeof onSelectGun === "function" ? onSelectGun : null;
+
   document.getElementById("closeGuns").addEventListener("click", onClose);
 
   document.getElementById("gunReset").addEventListener("click", () => {
     selectedGun.current = GUNS.rifle;
     renderGuns();
+    if (typeof onGunSelectCallback === "function") onGunSelectCallback("rifle");
   });
 
   document.getElementById("gunSave").addEventListener("click", () => {

@@ -15,7 +15,7 @@ import { loadSprites } from "./UI/spriteMenu.js";
 import { setCrosshairOptions } from "./script_files/crosshair.js";
 import { debugToggles } from "./script_files/debug.js";
 import { keybinds, initKeybindMenu } from "./script_files/keybindControls.js";
-import { initGunMenu } from "./script_files/guns.js";
+import { initGunMenu, getSelectedGunId } from "./script_files/guns.js";
  
 const keys = {};
 const mouse = { x: 0, y: 0, dx: 0, dy: 0, buttons: {} };
@@ -332,7 +332,11 @@ gunsOverlay.addEventListener("click", (e) => {
   if (e.target === gunsOverlay) closeGunsOverlay();
 });
 
-initGunMenu(closeGunsOverlay);
+initGunMenu(closeGunsOverlay, (gunId) => {
+      if (gameWs && gameWs.readyState === WebSocket.OPEN) {
+        gameWs.send(JSON.stringify({ type: "setGun", gun: gunId }));
+      }
+    });
 
 // ── Settings overlay (debug toggles) ─────────────────────────────────────────
 function openSettingsOverlay() {
@@ -395,7 +399,8 @@ const WS_OPEN_TIMEOUT  = 8000;
  
 let gameStarted = false;
 let retryCount  = 0;
- 
+let gameWs     = null;
+
 function connectWebSocket() {
   if (retryCount === 0) {
     loader.setProgress(20, "Connecting to server...");
@@ -413,6 +418,7 @@ function connectWebSocket() {
  
   try {
     ws = new WebSocket(wsProtocol + location.host);
+    gameWs = ws;
   } catch (err) {
     loader.updateStep("ws", "fail", `WebSocket creation failed: ${err.message}`);
     loader.showError(
@@ -508,6 +514,7 @@ function connectWebSocket() {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: "setName",   name: username }));
         ws.send(JSON.stringify({ type: "setSprite", sprite }));
+        ws.send(JSON.stringify({ type: "setGun",    gun: getSelectedGunId() }));
         ws.send(JSON.stringify({ type: "initialSpawn" }));
       }
  
