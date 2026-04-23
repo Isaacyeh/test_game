@@ -468,21 +468,29 @@ export function render(canvas, ctx) {
     yOffset += 14;
   }
 
-  if (debugToggles.networkLagLabel.enabled) {
-    let label = "NET --";
-    let color = "rgba(200,200,200,0.6)";
-    const stale = !lastPongAt || (Date.now() - lastPongAt) > 5000;
-    if (stale) {
-      label = "NET timeout";
-      color = "#ff6666";
-    } else if (Number.isFinite(networkRttMs)) {
-      const rtt = Math.round(networkRttMs);
-      const jitter = Number.isFinite(networkJitterMs) ? Math.round(networkJitterMs) : 0;
-      label = `NET ${rtt}ms (j${jitter})`;
-      if (rtt <= 60) color = "#7bd88f";
-      else if (rtt <= 120) color = "#f3d47a";
-      else color = "#ff6666";
-    }
+    if (debugToggles.networkLagLabel.enabled) {
+      let label = "NET --";
+      let color = "rgba(200,200,200,0.6)";
+      const stale = !lastPongAt || (Date.now() - lastPongAt) > 5000;
+      if (stale) {
+        label = "NET timeout";
+        color = "#ff6666";
+      } else if (Number.isFinite(networkRttMs)) {
+        const rtt = Math.round(networkRttMs);
+        const jitter = Number.isFinite(networkJitterMs) ? Math.round(networkJitterMs) : 0;
+        label = `NET ${rtt}ms (j${jitter})`;
+
+        // Gameplay-oriented quality bands:
+        // - Green: feels smooth (very low RTT and jitter)
+        // - Yellow: noticeable lag/occasional teleport
+        // - Red: severe choppiness or unstable connection
+        const goodFeel = rtt <= 60 && jitter <= 10;
+        const playableButLaggy = rtt <= 180 && jitter <= 40;
+
+        if (goodFeel) color = "#7bd88f";
+        else if (playableButLaggy) color = "#f3d47a";
+        else color = "#ff6666";
+      }
     ctx.save(); ctx.font="12px monospace"; ctx.fillStyle=color;
     ctx.textAlign="right"; ctx.textBaseline="top";
     ctx.fillText(label,canvas.width-10,yOffset);
