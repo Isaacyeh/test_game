@@ -18,7 +18,7 @@ import {
   PITCH_SCREEN_Y_SCALE,
   FIRE_RATE_FRAMES,
 } from "./constant.js";
-import { isWall, map, getGeometry } from "./map.js";
+import { isWall } from "./map.js";
 import { debugLog } from "./debug.js";
 import { keybinds, isPressed, initKeyMouseRef } from "./keybindControls.js";
  
@@ -31,9 +31,14 @@ const STAMINA_REGEN = 0.003;
 const STAMINA_COOLDOWN_FRAMES = 180;
 const SPRINT_SPEED_MULT = 1.6;
 const NETWORK_SEND_INTERVAL_MS = 33;
+const CAMERA_TURN_SPEED = 0.035;
  
 const state = {
   player: { ...SPAWN },
+  isMoving: false,
+  isShiftLock: false,
+  cameraYaw: SPAWN.angle,
+  moveFacingAngle: SPAWN.angle,
   z: 0,
   zVel: 0,
   onGround: true,
@@ -58,8 +63,6 @@ const state = {
  
   pitch: 0,   // vertical camera angle (radians, + = look down, - = look up)
  
-  sprite: "https://www.clker.com/cliparts/a/4/1/d/1301963432622081819stick_figure%20(1).png",
-  spriteAspect: 0.5,
   username: "",
   networkRttMs: null,
   networkJitterMs: null,
@@ -104,6 +107,11 @@ export function setMenuOpen(value) {
     }
   }
 }
+
+export function toggleMovementMode() {
+  state.isShiftLock = false;
+  return state.isShiftLock;
+}
  
 export function setMyId(id) {
   state.myId = id;
@@ -134,8 +142,6 @@ export function setOthers(nextOthers) {
     const prev = prevOthers[id];
     if (!prev) continue;
     if (filtered[id].username == null) filtered[id].username = prev.username;
-    if (filtered[id].sprite == null) filtered[id].sprite = prev.sprite;
-    if (filtered[id].spriteAspect == null) filtered[id].spriteAspect = prev.spriteAspect;
   }
 
   state.others = filtered;
@@ -148,23 +154,7 @@ export function updateRemoteMeta(id, meta) {
   state.others[id] = {
     ...current,
     username: meta.username ?? current.username,
-    sprite: meta.sprite ?? current.sprite,
-    spriteAspect: meta.spriteAspect ?? current.spriteAspect,
   };
-}
- 
-export function setSprite(url, spriteAspect = null) {
-  state.sprite = url;
-  if (Number.isFinite(spriteAspect) && spriteAspect > 0) {
-    state.spriteAspect = spriteAspect;
-  }
-  if (wsRef && wsRef.readyState === WebSocket.OPEN) {
-    wsRef.send(JSON.stringify({
-      type: "setSprite",
-      sprite: url,
-      spriteAspect: state.spriteAspect,
-    }));
-  }
 }
  
 export function getState() {
@@ -190,6 +180,10 @@ export function respawn() {
   state.player.y = SPAWN.y;
   state.player.angle = SPAWN.angle;
   state.player.sneaking = SPAWN.sneaking;
+  state.isMoving = false;
+  state.isShiftLock = false;
+  state.cameraYaw = SPAWN.angle;
+  state.moveFacingAngle = SPAWN.angle;
  
   state.z = 0;
   state.zVel = 0;
@@ -231,12 +225,8 @@ function raycastShot(originX, originY, originZ, angle, pitch) {
     if (z <= 0) return { x: x-dx*0.5, y: y-dy*0.5, z: 0,        hitWall: true, hitType: "floor"   };
     if (z >= 1) return { x: x-dx*0.5, y: y-dy*0.5, z: 1,        hitWall: true, hitType: "ceiling" };
  
-    const char = map[Math.floor(y)]?.[Math.floor(x)];
-    if (char) {
-      const geo = getGeometry(char);
-      if (geo && geo.solid) {
-        return { x: x-dx*0.5, y: y-dy*0.5, z: z-dz*0.5, hitWall: true, hitType: "wall" };
-      }
+    if (isWall(x, y)) {
+      return { x: x-dx*0.5, y: y-dy*0.5, z: z-dz*0.5, hitWall: true, hitType: "wall" };
     }
   }
   return { x, y, z, hitWall: false, hitType: "none" };
@@ -259,7 +249,7 @@ function canMove(x, y) {
     !isWall(x - PLAYER_RADIUS, y - PLAYER_RADIUS)
   );
 }
- 
+
 export function update() {
   if (!keysRef || !wsRef || !mouseRef) return;
   if (state.inMenu) return;
@@ -277,83 +267,115 @@ export function update() {
  
   const { player } = state;
   const blockControls = state.isChatting || state.isMenuOpen;
- 
-  // Turning
-  if (!blockControls && isPressed(keybinds.turnLeft))  player.angle -= 0.04;
-  if (!blockControls && isPressed(keybinds.turnRight)) player.angle += 0.04;
- 
-  // Vertical look (pitch) — arrow up / down
-  if (!blockControls && isPressed("ArrowUp")) {
-    state.pitch = Math.max(-PITCH_MAX, state.pitch - PITCH_SPEED);
+
+  state.isShiftLock = false;
+
+  if (state.staminaCooldown > 0) state.staminaCooldown--;
+
+  if (!blockControls) {
+    state.cameraYaw += mouseRef.dx * CAMERA_TURN_SPEED;
+    state.pitch += mouseRef.dy * PITCH_MOUSE_SENS;
+
+    if (isPressed(keybinds.turnLeft)) {
+      state.cameraYaw -= CAMERA_TURN_SPEED;
+    }
+    if (isPressed(keybinds.turnRight)) {
+      state.cameraYaw += CAMERA_TURN_SPEED;
+    }
+    if (keysRef.ArrowUp) {
+      state.pitch -= PITCH_SPEED;
+    }
+    if (keysRef.ArrowDown) {
+      state.pitch += PITCH_SPEED;
+    }
   }
-  if (!blockControls && isPressed("ArrowDown")) {
-    state.pitch = Math.min(PITCH_MAX, state.pitch + PITCH_SPEED);
+
+  state.pitch = Math.max(-PITCH_MAX, Math.min(PITCH_MAX, state.pitch));
+
+  const movingForward = !blockControls && isPressed(keybinds.moveForward);
+  const movingBackward = !blockControls && isPressed(keybinds.moveBackward);
+  const movingLeft = !blockControls && isPressed(keybinds.moveLeft);
+  const movingRight = !blockControls && isPressed(keybinds.moveRight);
+  const jumping = !blockControls && isPressed(keybinds.jump);
+  const sneaking = !blockControls && isPressed(keybinds.sneak);
+
+  const forwardAxis = (movingForward ? 1 : 0) - (movingBackward ? 1 : 0);
+  const strafeAxis = (movingRight ? 1 : 0) - (movingLeft ? 1 : 0);
+
+  let moveX = 0;
+  let moveY = 0;
+
+  if (forwardAxis || strafeAxis) {
+    const yaw = state.cameraYaw;
+    // Match Babylon camera yaw mapping: +yaw rotates toward negative map Y.
+    const forwardX = Math.cos(yaw);
+    const forwardY = -Math.sin(yaw);
+    const rightX = -forwardY;
+    const rightY = forwardX;
+
+    moveX = forwardX * forwardAxis + rightX * strafeAxis;
+    moveY = forwardY * forwardAxis + rightY * strafeAxis;
+
+    const moveLen = Math.hypot(moveX, moveY) || 1;
+    moveX /= moveLen;
+    moveY /= moveLen;
   }
- 
-  let moveX = 0, moveY = 0;
- 
-  // Sneak + Sprint
-  state.player.sneaking = !blockControls && isPressed(keybinds.sneak);
- 
-  const isTryingToSprint =
-    !blockControls && isPressed(keybinds.sprint) && !state.player.sneaking;
- 
-  if (isTryingToSprint && state.staminaCooldown === 0 && state.stamina > 0) {
-    state.isSprinting = true;
+
+  const wantsToSprint =
+    !sneaking &&
+    !blockControls &&
+    isPressed(keybinds.sprint) &&
+    (forwardAxis !== 0 || strafeAxis !== 0) &&
+    state.staminaCooldown <= 0 &&
+    state.stamina > 0;
+
+  if (wantsToSprint) {
     state.stamina = Math.max(0, state.stamina - STAMINA_DRAIN);
-    if (state.stamina === 0) {
+    state.isSprinting = true;
+    if (state.stamina <= 0) {
       state.staminaCooldown = STAMINA_COOLDOWN_FRAMES;
       state.isSprinting = false;
     }
   } else {
+    state.stamina = Math.min(MAX_STAMINA, state.stamina + STAMINA_REGEN);
     state.isSprinting = false;
-    if (state.staminaCooldown > 0) state.staminaCooldown--;
-    else state.stamina = Math.min(MAX_STAMINA, state.stamina + STAMINA_REGEN);
   }
- 
-  const sneakSpeed    = state.player.sneaking ? 0.4 : 1;
-  const sprintSpeed   = state.isSprinting ? SPRINT_SPEED_MULT : 1;
-  const effectiveSpeed = sneakSpeed * sprintSpeed;
- 
-  if (!blockControls && isPressed(keybinds.moveForward)) {
-    moveX += Math.cos(player.angle) * MOVE_SPEED * effectiveSpeed;
-    moveY += Math.sin(player.angle) * MOVE_SPEED * effectiveSpeed;
+
+  let moveSpeed = MOVE_SPEED;
+  if (state.isSprinting) moveSpeed *= SPRINT_SPEED_MULT;
+  if (sneaking) moveSpeed *= 0.55;
+  state.player.sneaking = sneaking;
+
+  const nextX = player.x + moveX * moveSpeed;
+  const nextY = player.y + moveY * moveSpeed;
+  if (canMove(nextX, player.y)) player.x = nextX;
+  if (canMove(player.x, nextY)) player.y = nextY;
+
+  state.isMoving = Boolean(forwardAxis || strafeAxis);
+  if (state.isMoving) {
+    const movementYaw = Math.atan2(moveY, moveX);
+    state.moveFacingAngle = movementYaw;
+    player.angle = movementYaw;
+  } else {
+    state.moveFacingAngle = player.angle;
   }
-  if (!blockControls && isPressed(keybinds.moveBackward)) {
-    moveX -= Math.cos(player.angle) * MOVE_SPEED * effectiveSpeed;
-    moveY -= Math.sin(player.angle) * MOVE_SPEED * effectiveSpeed;
-  }
-  if (!blockControls && isPressed(keybinds.moveLeft)) {
-    moveX += Math.cos(player.angle - Math.PI / 2) * MOVE_SPEED * effectiveSpeed;
-    moveY += Math.sin(player.angle - Math.PI / 2) * MOVE_SPEED * effectiveSpeed;
-  }
-  if (!blockControls && isPressed(keybinds.moveRight)) {
-    moveX += Math.cos(player.angle + Math.PI / 2) * MOVE_SPEED * effectiveSpeed;
-    moveY += Math.sin(player.angle + Math.PI / 2) * MOVE_SPEED * effectiveSpeed;
-  }
- 
-  const nx = player.x + moveX, ny = player.y + moveY;
-  if (canMove(nx, ny))            { player.x = nx; player.y = ny; }
-  else if (canMove(nx, player.y))   player.x = nx;
-  else if (canMove(player.x, ny))   player.y = ny;
- 
-  // Jump
-  if (!blockControls && isPressed(keybinds.jump) && state.onGround) {
+
+  if (jumping && state.onGround) {
     state.zVel = JUMP_VELOCITY;
     state.onGround = false;
   }
-  state.zVel -= GRAVITY;
-  state.z    += state.zVel;
-  if (state.z <= 0) { state.z = 0; state.zVel = 0; state.onGround = true; }
- 
-  // Mouse look
-  if (!blockControls) {
-    if (mouseRef.dx) player.angle += mouseRef.dx * 0.006;
-    if (mouseRef.dy) {
-      state.pitch = Math.max(-PITCH_MAX, Math.min(PITCH_MAX,
-        state.pitch + mouseRef.dy * PITCH_MOUSE_SENS));
+
+  if (!state.onGround || state.z > 0 || state.zVel > 0) {
+    state.z += state.zVel;
+    state.zVel -= GRAVITY;
+    if (state.z > MAX_JUMP && state.zVel > 0) state.zVel = 0;
+    if (state.z <= 0) {
+      state.z = 0;
+      state.zVel = 0;
+      state.onGround = true;
     }
   }
+
   mouseRef.dx = 0;
   mouseRef.dy = 0;
  
@@ -365,17 +387,18 @@ export function update() {
  
   if ((primaryHeld || secondaryHeld) && state.cooldown === 0) {
     const pid = nextProjectileId++;
+    const aimYaw = state.cameraYaw;
  
     // Visual bullet origin: eye/torso height
     const bulletOriginZ = state.z + PROJECTILE_START_Z;
     const cosPitch = Math.cos(state.pitch);
     const startOffset = 0.2;
-    const startX = player.x + Math.cos(player.angle) * startOffset * cosPitch;
-    const startY = player.y + Math.sin(player.angle) * startOffset * cosPitch;
+    const startX = player.x + Math.cos(aimYaw) * startOffset * cosPitch;
+    const startY = player.y + Math.sin(aimYaw) * startOffset * cosPitch;
  
     const endpoint = raycastShot(
       player.x, player.y, bulletOriginZ,
-      player.angle, state.pitch
+      aimYaw, state.pitch
     );
  
     const totalDist    = Math.hypot(endpoint.x - startX, endpoint.y - startY);
@@ -390,13 +413,14 @@ export function update() {
       originX:     startX,
       originY:     startY,
       originZ:     bulletOriginZ,
-      angle:       player.angle,
+      angle:       aimYaw,
       pitch:       state.pitch,
+      isMoving:    state.isMoving,
       endX:        endpoint.x,
       endY:        endpoint.y,
       endZ:        endpoint.z,
-      vx:          Math.cos(player.angle) * PROJECTILE_SPEED * cosPitch,
-      vy:          Math.sin(player.angle) * PROJECTILE_SPEED * cosPitch,
+      vx:          Math.cos(aimYaw) * PROJECTILE_SPEED * cosPitch,
+      vy:          Math.sin(aimYaw) * PROJECTILE_SPEED * cosPitch,
       vz:          -pitchSlope * PROJECTILE_SPEED * cosPitch,
       ttl:         travelFrames,
       totalFrames: travelFrames,
@@ -430,7 +454,7 @@ export function update() {
         y:       player.y,
         z:       state.z,       // floor-relative, NOT +PROJECTILE_START_Z
         shotOriginZ: bulletOriginZ,
-        angle:   player.angle,
+        angle:   aimYaw,
         pitch:   state.pitch,
       }));
     }
@@ -458,8 +482,10 @@ export function update() {
       x:           player.x,
       y:           player.y,
       angle:       player.angle,
+      cameraYaw:   state.cameraYaw,
       z:           state.z,
       pitch:       state.pitch,
+      isMoving:    state.isMoving,
       projectiles: state.projectiles.map((p) => ({
         id:  p.id,
         x:   p.x,

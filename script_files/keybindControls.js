@@ -1,7 +1,16 @@
 let keysRef = null;
 let mouseRef = null;
 
-const importedKeybinds = JSON.parse(localStorage.getItem("keybinds") || "{}");
+function readStoredKeybinds() {
+  try {
+    const stored = localStorage.getItem("keybinds");
+    return stored ? JSON.parse(stored) : {};
+  } catch {
+    return {};
+  }
+}
+
+const importedKeybinds = readStoredKeybinds();
 
 const defaults = {
   moveForward: "w",
@@ -124,7 +133,11 @@ export function initKeybindMenu(onClose) {
   });
 
   document.getElementById("kbSave").addEventListener("click", () => {
-    localStorage.setItem("keybinds", JSON.stringify(keybinds));
+    try {
+      localStorage.setItem("keybinds", JSON.stringify(keybinds));
+    } catch {
+      // Ignore storage failures in restricted preview contexts.
+    }
   });
 
   document.getElementById("closeKeybinds").addEventListener("click", () => {

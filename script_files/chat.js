@@ -1,4 +1,4 @@
-import { setIsChatting, getState } from "./player.js";
+import { setIsChatting } from "./player.js";
  
 export function setupChat(ws, chatInput, chat, sendBtn, username) {
   // ── Wrap input row in a flex container ──────────────────────────────────
@@ -37,9 +37,7 @@ export function setupChat(ws, chatInput, chat, sendBtn, username) {
   }
  
   ws.addEventListener("open", () => {
-    const { sprite, spriteAspect } = getState();
     ws.send(JSON.stringify({ type: "setName", name: username }));
-    ws.send(JSON.stringify({ type: "setSprite", sprite, spriteAspect }));
   });
  
   sendBtn.addEventListener("click", sendMessage);

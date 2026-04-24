@@ -5,16 +5,14 @@ import {
   setMyId,
   setOthers,
   setMenuOpen,
-  setSprite,
   promptUsername,
   setNetworkLag,
   updateRemoteMeta,
+  toggleMovementMode,
 } from "./script_files/player.js";
 import { SPAWN_INVINCIBILITY_DURATION, setFOV } from "./script_files/constant.js";
 import { setupChat } from "./script_files/chat.js";
 import { render, updateLeaderboard } from "./script_files/render/render.js";
-import { addBulletHole } from "./script_files/bulletHole.js";
-import { loadSprites } from "./UI/spriteMenu.js";
 import { setCrosshairOptions } from "./script_files/crosshair.js";
 import { debugToggles } from "./script_files/debug.js";
 import { keybinds, initKeybindMenu } from "./script_files/keybindControls.js";
@@ -26,7 +24,8 @@ const mouse = { x: 0, y: 0, dx: 0, dy: 0, buttons: {} };
  
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 const canvas                = document.getElementById("game");
-const ctx                   = canvas.getContext("2d");
+const hudCanvas             = document.getElementById("hud");
+const hudCtx                = hudCanvas.getContext("2d");
  
 // ── Canvas scaling — fills the window below the header, keeping 8:5 ratio ────
 // Logical resolution stays 800×500 so all game math is unchanged.
@@ -43,12 +42,14 @@ const ctx                   = canvas.getContext("2d");
     let h = winW / ASPECT;
     if (h > winH) { h = winH; w = winH * ASPECT; }
     w = Math.floor(w); h = Math.floor(h);
-    canvas.style.width    = w + "px";
-    canvas.style.height   = h + "px";
-    canvas.style.position = "fixed";
-    canvas.style.left     = Math.floor((winW - w) / 2) + "px";
-    canvas.style.top      = Math.floor(headerH + (winH - h) / 2) + "px";
-    canvas.style.margin   = "0";
+    for (const el of [canvas, hudCanvas]) {
+      el.style.width    = w + "px";
+      el.style.height   = h + "px";
+      el.style.position = "fixed";
+      el.style.left     = Math.floor((winW - w) / 2) + "px";
+      el.style.top      = Math.floor(headerH + (winH - h) / 2) + "px";
+      el.style.margin   = "0";
+    }
   }
   resize();
   window.addEventListener("resize", resize);
@@ -74,6 +75,7 @@ function requireEl(id, el) {
 }
 
 requireEl("game", canvas);
+requireEl("hud", hudCanvas);
 requireEl("menu", menu);
 requireEl("customizationMenuLink", customizationMenuLink);
 requireEl("customizationOverlay", customizationOverlay);
@@ -95,10 +97,7 @@ let appliedCrosshairOpacity = Number(crosshairOpacityInput.value);
 let pendingCrosshairBlobUrl = null;
 let appliedCrosshairBlobUrl = null;
  
-// ── Skin / sprite state ───────────────────────────────────────────────────────
-let pendingSkinUrl  = "";
-let pendingSkinBlob = null;
- 
+// ── Crosshair / customization state ───────────────────────────────────────────
 menu.classList.add("hidden");
 customizationOverlay.classList.add("hidden");
 settingsOverlay.classList.add("hidden");
@@ -139,6 +138,12 @@ window.addEventListener("mousemove", (e) => {
 });
  
 window.addEventListener("keydown", (e) => {
+  if (e.key === "Alt" || e.code === "AltLeft" || e.code === "AltRight") {
+    if (isAnyMenuOpen()) return;
+    e.preventDefault();
+    toggleMovementMode();
+    return;
+  }
   if (e.key === "Tab") return;
   if (isAnyMenuOpen()) return;
   keys[e.key] = true;
@@ -230,111 +235,13 @@ function buildFOVSlider() {
 async function buildSkinSection() {
   const container = document.getElementById("skinSection");
   if (!container) return;
- 
-  const spritesData = await loadSprites();
- 
   container.innerHTML = `
     <hr style="border-color:#444; margin: 14px 0;">
-    <h3 style="color: lightslategray; margin: 0 0 10px;">Character Skin</h3>
-    <div class="field-group">
-      <label for="skinPresetSelect">Preset skins</label>
-      <select id="skinPresetSelect" style="
-        background:#1e1e1e; color:#fff; border:1px solid #666;
-        padding:6px 8px; border-radius:4px; font-size:14px; width:100%;
-      ">
-        <option value="">— Select a preset —</option>
-        ${spritesData.map((s) => `<option value="${s.url}">${s.name}</option>`).join("")}
-      </select>
-    </div>
-    <div class="field-group" style="margin-top:10px;">
-      <label for="skinUploadInput">Or upload a custom image</label>
-      <input id="skinUploadInput" type="file" accept="image/*" />
-      <div id="skinScaleLabel" style="margin-top:6px; color:#aaa; font-size:12px;">Image scale: -</div>
-    </div>
-    <div style="margin-top:10px; display:flex; align-items:center; gap:12px;">
-      <img id="skinPreviewImg" src="" alt="Skin preview" style="
-        display:none; width:64px; height:64px; object-fit:contain;
-        border:1px solid #666; border-radius:4px; background:#111;
-      "/>
-      <span id="skinPreviewLabel" style="color:#aaa; font-size:13px;">No skin selected</span>
-    </div>
+    <h3 style="color: lightslategray; margin: 0 0 10px;">3D Character</h3>
+    <p style="color:#aaa; font-size:13px; line-height:1.5; margin:0;">
+      The player now uses the uploaded GLTF human model. Character skin uploads are disabled while the 3D conversion is in progress.
+    </p>
   `;
- 
-  const presetSelect = document.getElementById("skinPresetSelect");
-  const skinUpload   = document.getElementById("skinUploadInput");
-  const skinLabel    = document.getElementById("skinPreviewLabel");
-  const skinScale    = document.getElementById("skinScaleLabel");
-
-  let scaleRequestId = 0;
-  async function updateSkinScale(url) {
-    if (!skinScale) return;
-    if (!url) {
-      skinScale.textContent = "Image scale: -";
-      return;
-    }
-    const requestId = ++scaleRequestId;
-    const dims = await readImageDimensions(url);
-    if (requestId !== scaleRequestId) return;
-    if (!dims) {
-      skinScale.textContent = "Image scale: -";
-      return;
-    }
-    const scaleX = normalizeScaleX(dims.width, dims.height);
-    if (scaleX === null) {
-      skinScale.textContent = "Image scale: -";
-      return;
-    }
-    skinScale.textContent = `Image scale: ${formatScaleX(scaleX)}:1 (${dims.width}x${dims.height})`;
-  }
- 
-  const currentSprite = getState().sprite;
-  const match = spritesData.find((s) => s.url === currentSprite);
-  if (match) {
-    presetSelect.value = match.url;
-    pendingSkinUrl = match.url;
-    updateSkinPreview(match.url);
-    skinLabel.textContent = match.name;
-    updateSkinScale(match.url);
-  } else {
-    updateSkinScale(currentSprite || "");
-  }
- 
-  presetSelect.addEventListener("change", (e) => {
-    const url = e.target.value;
-    if (!url) return;
-    if (pendingSkinBlob) { URL.revokeObjectURL(pendingSkinBlob); pendingSkinBlob = null; }
-    skinUpload.value = "";
-    pendingSkinUrl = url;
-    updateSkinPreview(url);
-    updateSkinScale(url);
-    const selected = spritesData.find((s) => s.url === url);
-    skinLabel.textContent = selected ? selected.name : "Preset skin";
-  });
- 
-  skinUpload.addEventListener("change", (e) => {
-    const file = e.target.files && e.target.files[0];
-    if (!file) return;
-    // Use FileReader to get a base64 data URL instead of a blob URL.
-    // Blob URLs only work in the tab that created them; if we sent a blob URL
-    // to the server, other players' browsers couldn't load it (different origin).
-    // Base64 data URLs work everywhere and can be broadcast over WebSocket.
-    if (file.size > 2_000_000) {
-      alert("Image too large — please upload something under 2 MB.");
-      skinUpload.value = "";
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = reader.result;
-      if (pendingSkinBlob) { URL.revokeObjectURL(pendingSkinBlob); pendingSkinBlob = null; }
-      pendingSkinUrl = dataUrl;
-      presetSelect.value = "";
-      updateSkinPreview(dataUrl);
-      updateSkinScale(dataUrl);
-      skinLabel.textContent = file.name;
-    };
-    reader.readAsDataURL(file);
-  });
 }
  
 // ── Customization overlay ─────────────────────────────────────────────────────
@@ -345,8 +252,6 @@ function openCustomizationOverlay() {
   crosshairOpacityInput.value = String(appliedCrosshairOpacity);
   pendingCrosshairOpacity = appliedCrosshairOpacity;
   pendingCrosshairImage   = appliedCrosshairImage;
-  pendingSkinUrl = getState().sprite;
-  if (pendingSkinBlob) { URL.revokeObjectURL(pendingSkinBlob); pendingSkinBlob = null; }
   syncMenuControlState();
   clearInputState();
   if (document.pointerLockElement === canvas) document.exitPointerLock();
@@ -389,7 +294,6 @@ confirmCustomization.addEventListener("click", () => {
   appliedCrosshairOpacity = pendingCrosshairOpacity;
   appliedCrosshairBlobUrl = pendingCrosshairBlobUrl;
   setCrosshairOptions({ opacity: appliedCrosshairOpacity, imageSrc: appliedCrosshairImage });
-  if (pendingSkinUrl) setSprite(pendingSkinUrl);
   closeCustomizationOverlay();
 });
  
@@ -520,14 +424,14 @@ function connectWebSocket() {
         setMyId(data.id);
         loader.updateStep("init", "ok", "Player initialized — ID assigned");
         loader.setProgress(75, "Loading assets...");
-        loader.addStep("assets", "Loading sprites & map data...", "wait");
+        loader.addStep("assets", "Loading 3D character & map data...", "wait");
       }
       if (data.type === "players") {
         setOthers(data.players);
         if (data.leaderboard) updateLeaderboard(data.leaderboard);
         if (!window.__assetsReady) {
           window.__assetsReady = true;
-          loader.updateStep("assets", "ok", "Sprites & map data ready");
+          loader.updateStep("assets", "ok", "3D character & map data ready");
           loader.setProgress(90, "Starting render loop...");
           loader.addStep("render", "Starting render loop...", "wait");
         }
@@ -539,9 +443,6 @@ function connectWebSocket() {
         for (const id in data.players) {
           updateRemoteMeta(id, data.players[id]);
         }
-      }
-      if (data.type === "bulletHole") {
-        addBulletHole(data.wx, data.wy, data.endZ, data.bulletOriginZ, data.hitType);
       }
       if (data.type === "pong") {
         const now = performance.now();
@@ -571,7 +472,7 @@ function connectWebSocket() {
       }
       syncMenuControlState();
       update();
-      render(canvas, ctx);
+      render(canvas, hudCtx);
       requestAnimationFrame(loop);
     }
     loop();
@@ -581,10 +482,8 @@ function connectWebSocket() {
       try { username = promptUsername(); } catch { username = "Anonymous"; }
       try { setupChat(ws, chatInput, chat, sendBtn, username); } catch (err) { console.warn("Chat setup failed:", err); }
  
-      const { sprite } = getState();
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: "setName",      name: username }));
-        ws.send(JSON.stringify({ type: "setSprite",    sprite }));
         ws.send(JSON.stringify({ type: "initialSpawn" }));
       }
  

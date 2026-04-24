@@ -1,9 +1,28 @@
-This project is brought to you by some bored high school students
+This project is brought to you by some bored high school students.
 
-This project is a browser-based DOOM-style 2.5D ray-casting game built with HTML, CSS, and JavaScript, featuring:
+This project is now a browser-based multiplayer 3D shooter using Babylon.js and WebGL, featuring:
 - Real-time multiplayer via WebSockets
-- Classic ray-casting renderer
-This project is inspired by early FPS engines like DOOM and Wolfenstein 3D, but runs entirely in the browser.
+- Babylon.js 3D world rendering
+- CAD map model support via GLTF/GLB
+
+## CAD/3D map support (Babylon.js)
+
+You can now load a GLTF or GLB map mesh into the Babylon world renderer:
+
+1. Place your file at `assets/map.gltf` or `assets/map.glb`
+2. Run `npm start`
+3. Open the game
+
+Optional: load a custom path with query string:
+
+- `?mapModel=/assets/your-map.gltf`
+- `?mapModel=/assets/your-map.glb`
+
+Important current limitation:
+
+- Collision and shot checks still use a simplified proxy derived from the imported GLTF when available.
+- Tile-based fallback collision behavior still exists if the proxy has not loaded or the CAD file is unavailable.
+- The map placement transform is defined in `assets/mapTransform.json`; use that file to rotate, scale, or offset the imported model.
 
 How to run the code (for my less informed friends):
 

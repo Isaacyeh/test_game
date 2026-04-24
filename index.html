@@ -21,6 +21,14 @@
       It adds the `loading` class to <body> and injects the overlay.
     -->
     <script src="loader.js"></script>
+    <script type="importmap">
+      {
+        "imports": {
+          "@babylonjs/core/": "/node_modules/@babylonjs/core/",
+          "@babylonjs/loaders/": "/node_modules/@babylonjs/loaders/"
+        }
+      }
+    </script>
     <link rel="stylesheet" href="style.css" />
   </head>
   <body class="loading">
@@ -52,6 +60,7 @@
     <script src="UI/menu.js"></script>
  
     <canvas id="game" width="800" height="500"></canvas>
+    <canvas id="hud" width="800" height="500" aria-hidden="true"></canvas>
  
     <div id="spriteMenu" class="sprite-menu hidden">
       <!-- Populated by spriteMenu.js -->
@@ -115,13 +124,6 @@
           <span class="toggle-label">Shot placement logs</span>
           <label class="toggle-switch">
             <input type="checkbox" data-debug-key="shotPlacement" />
-            <span class="toggle-thumb"></span>
-          </label>
-        </div>
-        <div class="toggle-row">
-          <span class="toggle-label">Bullet hole rendering</span>
-          <label class="toggle-switch">
-            <input type="checkbox" data-debug-key="bulletHoles" />
             <span class="toggle-thumb"></span>
           </label>
         </div>
@@ -222,6 +224,18 @@
       })();
     </script>
 
-    <script type="module" src="script.js"></script>
+    <script type="module">
+      window.__bootstrapStarted = true;
+      import("./script.js").catch(function (error) {
+        const message = error && error.message ? error.message : String(error || "Unknown bootstrap error");
+        const l = window.__loader;
+        if (l && typeof l.updateStep === "function") {
+          l.updateStep("bootstrap", "fail", message);
+        }
+        if (l && typeof l.showError === "function") {
+          l.showError(`Startup error: ${message}`, function () { location.reload(); });
+        }
+      });
+    </script>
   </body>
 </html>

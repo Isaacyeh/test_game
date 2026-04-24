@@ -9,6 +9,17 @@ canvas {
   display: block;
   margin: 0 auto;
 }
+
+#game {
+  z-index: 10;
+}
+
+#hud {
+  border: none;
+  pointer-events: none;
+  z-index: 20;
+  background: transparent;
+}
  
 /* ── Chat ─────────────────────────────────────────────────────────────────── */
 #chatContainer {
